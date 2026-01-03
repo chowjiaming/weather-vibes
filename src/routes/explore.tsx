@@ -7,7 +7,8 @@
  * 🌍 Default: Auto-detects user region via timezone
  */
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { motion } from 'motion/react'
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { z } from 'zod'
 
@@ -20,13 +21,13 @@ import {
 } from '@/components/map'
 import {
   AirQualityPanel,
-  BentoGrid,
   FloodPanel,
   ForecastPanel,
   MarinePanel,
   StatsPanel,
   WeatherPanel,
 } from '@/components/panels'
+import { Button } from '@/components/ui/button'
 import {
   extractAirQualityData,
   extractFloodData,
@@ -119,6 +120,9 @@ function ExplorePage() {
   const { q: location, lat, lon } = Route.useSearch()
   const navigate = useNavigate()
   const mapRef = useRef<MapCanvasHandle>(null)
+
+  // 📊 Panel visibility state
+  const [showPanels, setShowPanels] = useState(true)
 
   // 🌍 Get regional default based on user's timezone
   const defaultLocation = useMemo(() => getDefaultLocation(), [])
@@ -301,82 +305,109 @@ function ExplorePage() {
       {/* 📍 Floating geolocation button */}
       <LocationButton />
 
-      {/* 📊 Bento panel overlay */}
+      {/* 🔀 Panel toggle button */}
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3, duration: 0.4 }}
-        className="absolute bottom-4 left-4 right-4 z-10"
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ delay: 0.2 }}
+        className="fixed bottom-4 left-4 z-30"
       >
-        <BentoGrid columns={12} gap="md" className="max-w-7xl mx-auto">
-          {/* 🌡️ Current weather */}
-          <WeatherPanel
-            location={effectiveLocation ?? 'Loading...'}
-            data={currentWeather}
-            isLoading={historicalLoading}
-            colSpan={3}
-            animationDelay={0}
-          />
-
-          {/* 🌬️ Air quality */}
-          <AirQualityPanel
-            data={airQualityData ?? undefined}
-            isLoading={airQualityLoading}
-            colSpan={3}
-            animationDelay={1}
-          />
-
-          {/* 📅 Forecast */}
-          <ForecastPanel
-            data={forecastData}
-            isLoading={forecastLoading}
-            colSpan="half"
-            animationDelay={2}
-          />
-
-          {/* 📊 Stats */}
-          {stats && (
-            <StatsPanel
-              title="7-Day Summary"
-              stats={[
-                {
-                  label: 'Avg Temp',
-                  value: stats.avg.toFixed(1),
-                  unit: '°C',
-                },
-                { label: 'Max', value: stats.max.toFixed(1), unit: '°C' },
-                { label: 'Min', value: stats.min.toFixed(1), unit: '°C' },
-                {
-                  label: 'Range',
-                  value: (stats.max - stats.min).toFixed(1),
-                  unit: '°C',
-                },
-              ]}
-              colSpan={isCoastal || isRiverine ? 3 : 4}
-              columns={isCoastal || isRiverine ? 2 : 4}
-              animationDelay={3}
-            />
+        <Button
+          variant="glass"
+          size="icon-lg"
+          onClick={() => setShowPanels((prev) => !prev)}
+          className="rounded-full shadow-lg"
+          aria-label={showPanels ? 'Hide data panels' : 'Show data panels'}
+        >
+          {showPanels ? (
+            <PanelLeftClose className="size-5" />
+          ) : (
+            <PanelLeftOpen className="size-5" />
           )}
-
-          {/* 🌊 Marine panel (coastal locations only) */}
-          <MarinePanel
-            data={marineData ?? undefined}
-            isLoading={marineLoading}
-            visible={isCoastal}
-            colSpan={3}
-            animationDelay={4}
-          />
-
-          {/* 🌊 Flood panel (riverine locations only) */}
-          <FloodPanel
-            data={floodData ?? undefined}
-            isLoading={floodLoading}
-            visible={isRiverine}
-            colSpan={3}
-            animationDelay={5}
-          />
-        </BentoGrid>
+        </Button>
       </motion.div>
+
+      {/* 📊 Bento panel sidebar (left side on desktop) */}
+      <AnimatePresence>
+        {showPanels && (
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="absolute top-4 bottom-20 left-4 z-10 w-[380px] max-w-[calc(100vw-2rem)] overflow-y-auto scrollbar-thin scrollbar-thumb-primary/20 scrollbar-track-transparent"
+          >
+            <div className="flex flex-col gap-3">
+              {/* 🌡️ Current weather */}
+              <WeatherPanel
+                location={effectiveLocation ?? 'Loading...'}
+                data={currentWeather}
+                isLoading={historicalLoading}
+                colSpan="full"
+                animationDelay={0}
+              />
+
+              {/* 🌬️ Air quality */}
+              <AirQualityPanel
+                data={airQualityData ?? undefined}
+                isLoading={airQualityLoading}
+                colSpan="full"
+                animationDelay={1}
+              />
+
+              {/* 📅 Forecast */}
+              <ForecastPanel
+                data={forecastData}
+                isLoading={forecastLoading}
+                colSpan="full"
+                animationDelay={2}
+              />
+
+              {/* 📊 Stats */}
+              {stats && (
+                <StatsPanel
+                  title="7-Day Summary"
+                  stats={[
+                    {
+                      label: 'Avg Temp',
+                      value: stats.avg.toFixed(1),
+                      unit: '°C',
+                    },
+                    { label: 'Max', value: stats.max.toFixed(1), unit: '°C' },
+                    { label: 'Min', value: stats.min.toFixed(1), unit: '°C' },
+                    {
+                      label: 'Range',
+                      value: (stats.max - stats.min).toFixed(1),
+                      unit: '°C',
+                    },
+                  ]}
+                  colSpan="full"
+                  columns={2}
+                  animationDelay={3}
+                />
+              )}
+
+              {/* 🌊 Marine panel (coastal locations only) */}
+              <MarinePanel
+                data={marineData ?? undefined}
+                isLoading={marineLoading}
+                visible={isCoastal}
+                colSpan="full"
+                animationDelay={4}
+              />
+
+              {/* 🌊 Flood panel (riverine locations only) */}
+              <FloodPanel
+                data={floodData ?? undefined}
+                isLoading={floodLoading}
+                visible={isRiverine}
+                colSpan="full"
+                animationDelay={5}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
