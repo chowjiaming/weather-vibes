@@ -1,11 +1,17 @@
 {
   "name": "weather-vibes",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A historical weather patterns explorer with city weather data, alerts monitoring, and beautiful shareable weather cards",
   "private": true,
   "type": "module",
   "license": "ISC",
-  "author": "Joseph Chow <contact@josephchow.dev>",
+  "authors": [
+    {
+      "name": "Joseph Chow",
+      "email": "contact@josephchow.dev",
+      "url": "https://josephchow.dev"
+    }
+  ],
   "homepage": "https://weathervibes.xyz",
   "repository": {
     "type": "git",
@@ -54,7 +60,6 @@
     "input-otp": "^1.4.2",
     "lucide-react": "^0.562.0",
     "next-themes": "^0.4.6",
-    "nitro": "latest",
     "react": "^19.2.0",
     "react-day-picker": "^9.13.0",
     "react-dom": "^19.2.0",
@@ -70,6 +75,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.10",
+    "@netlify/vite-plugin-tanstack-start": "^1.2.6",
     "@tanstack/devtools-vite": "^0.3.11",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.2.0",
@@ -85,6 +91,7 @@
     "web-vitals": "^5.1.0"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=24.0.0",
+    "pnpm": ">=10.0.0"
   }
 }
