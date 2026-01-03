@@ -122,7 +122,7 @@ export const hourlyVariablesSchema = z.array(
   ]),
 )
 
-/** Daily weather variables */
+/** Daily weather variables (Forecast API) */
 export const dailyVariablesSchema = z.array(
   z.enum([
     'weather_code',
@@ -142,6 +142,35 @@ export const dailyVariablesSchema = z.array(
     'snowfall_sum',
     'precipitation_hours',
     'precipitation_probability_max',
+    'wind_speed_10m_max',
+    'wind_gusts_10m_max',
+    'wind_direction_10m_dominant',
+    'shortwave_radiation_sum',
+    'et0_fao_evapotranspiration',
+  ]),
+)
+
+/** Daily weather variables (Historical API - includes additional aggregates) */
+export const historicalDailyVariablesSchema = z.array(
+  z.enum([
+    'weather_code',
+    'temperature_2m_max',
+    'temperature_2m_min',
+    'temperature_2m_mean', // Historical API only
+    'apparent_temperature_max',
+    'apparent_temperature_min',
+    'apparent_temperature_mean', // Historical API only
+    'sunrise',
+    'sunset',
+    'daylight_duration',
+    'sunshine_duration',
+    'uv_index_max',
+    'uv_index_clear_sky_max',
+    'precipitation_sum',
+    'rain_sum',
+    'showers_sum',
+    'snowfall_sum',
+    'precipitation_hours',
     'wind_speed_10m_max',
     'wind_gusts_10m_max',
     'wind_direction_10m_dominant',
@@ -208,7 +237,7 @@ export const historicalWeatherSchema = coordinatesSchema.extend({
   start_date: dateSchema,
   end_date: dateSchema,
   hourly: hourlyVariablesSchema.optional(),
-  daily: dailyVariablesSchema.optional(),
+  daily: historicalDailyVariablesSchema.optional(), // Use historical-specific schema
   temperature_unit: temperatureUnitSchema.optional(),
   wind_speed_unit: windSpeedUnitSchema.optional(),
   precipitation_unit: precipitationUnitSchema.optional(),
@@ -316,6 +345,7 @@ export const airQualityVariablesSchema = z.array(
 /** Air quality request schema */
 export const airQualitySchema = coordinatesSchema.extend({
   hourly: airQualityVariablesSchema.optional(),
+  current: airQualityVariablesSchema.optional(),
   timeformat: timeFormatSchema.optional(),
   timezone: z.string().optional(),
   past_days: z.number().int().min(0).max(92).optional(),

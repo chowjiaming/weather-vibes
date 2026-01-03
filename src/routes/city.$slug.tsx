@@ -15,7 +15,7 @@ import { useCallback, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { getHistoricalWeather, searchLocation } from '@/api'
-import type { DailyWeatherVariable } from '@/api/types'
+import type { HistoricalDailyWeatherVariable } from '@/api/types'
 import type { ChartDataPoint } from '@/components/charts'
 import {
   ChartControls,
@@ -142,7 +142,7 @@ export const Route = createFileRoute('/city/$slug')({
         longitude: lon,
         start_date: startDate,
         end_date: endDate,
-        daily: vars as DailyWeatherVariable[],
+        daily: vars as HistoricalDailyWeatherVariable[],
         timezone: 'auto',
       },
     })

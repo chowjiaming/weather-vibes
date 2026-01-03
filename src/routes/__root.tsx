@@ -1,6 +1,6 @@
 /**
  * 🌳 Root Route
- * App shell with SEO, layout, and providers
+ * Spatial app shell with floating navigation and theme providers
  */
 
 import { TanStackDevtools } from '@tanstack/react-devtools'
@@ -11,9 +11,13 @@ import {
   Scripts,
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
-import type { ReactNode } from 'react'
-import { SiteFooter, SiteHeader } from '@/components/layout'
+import { ThemeProvider } from 'next-themes'
+import { type ReactNode, useState } from 'react'
+
+import { FloatingNav } from '@/components/navigation'
+import { LocationSearchOverlay } from '@/components/search'
 import { Toaster } from '@/components/ui/sonner'
+
 import appCss from '../styles.css?url'
 
 // 🌐 Site configuration
@@ -84,6 +88,9 @@ export const Route = createRootRoute({
       { rel: 'preconnect', href: 'https://api.open-meteo.com' },
       { rel: 'preconnect', href: 'https://archive-api.open-meteo.com' },
       { rel: 'preconnect', href: 'https://geocoding-api.open-meteo.com' },
+
+      // 🗺️ Preconnect to map tiles
+      { rel: 'preconnect', href: 'https://tiles.openfreemap.org' },
     ],
     scripts: [
       // 📊 JSON-LD Structured Data
@@ -122,7 +129,7 @@ function RootDocument({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body className="min-h-screen bg-background font-sans antialiased">
+      <body className="min-h-screen bg-background font-sans antialiased overflow-hidden">
         {children}
         <TanStackDevtools
           config={{
@@ -142,14 +149,32 @@ function RootDocument({ children }: { children: ReactNode }) {
 }
 
 function RootComponent() {
+  const [searchOpen, setSearchOpen] = useState(false)
+
   return (
-    <div className="relative flex min-h-screen flex-col">
-      <SiteHeader />
-      <main className="flex-1">
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="system"
+      enableSystem
+      disableTransitionOnChange
+    >
+      {/* 🗺️ Full-screen spatial canvas */}
+      <div className="relative h-screen w-screen">
+        {/* 🧭 Floating navigation */}
+        <FloatingNav
+          onSearchOpen={() => setSearchOpen(true)}
+          onLayerToggle={(_layerId, _enabled) => {}}
+        />
+
+        {/* 📄 Route content */}
         <Outlet />
-      </main>
-      <SiteFooter />
-      <Toaster />
-    </div>
+
+        {/* 🔍 Search overlay */}
+        <LocationSearchOverlay open={searchOpen} onOpenChange={setSearchOpen} />
+
+        {/* 🔔 Toast notifications */}
+        <Toaster />
+      </div>
+    </ThemeProvider>
   )
 }

@@ -3,8 +3,20 @@
  * Transformations and helpers for weather data
  */
 
-import { differenceInDays, eachDayOfInterval, format, parseISO } from 'date-fns'
+import {
+  differenceInDays,
+  eachDayOfInterval,
+  format as fnsFormat,
+  parseISO,
+} from 'date-fns'
 import type { WeatherVariable } from './search-params'
+
+/**
+ * 📅 Format a date to YYYY-MM-DD string
+ */
+export function formatDate(date: Date): string {
+  return fnsFormat(date, 'yyyy-MM-dd')
+}
 
 /**
  * 📊 Chart data point type (compatible with Recharts)
@@ -47,7 +59,7 @@ export function parseCitySlug(slug: string): string {
  */
 export function formatApiDate(date: Date | string): string {
   const d = typeof date === 'string' ? parseISO(date) : date
-  return format(d, 'yyyy-MM-dd')
+  return fnsFormat(d, 'yyyy-MM-dd')
 }
 
 /**
@@ -58,7 +70,7 @@ export function formatDisplayDate(
   formatStr: string = 'MMM d, yyyy',
 ): string {
   const d = typeof date === 'string' ? parseISO(date) : date
-  return format(d, formatStr)
+  return fnsFormat(d, formatStr)
 }
 
 /**
@@ -107,7 +119,7 @@ export function groupByMonth(
   >()
 
   for (const row of data) {
-    const monthKey = format(parseISO(row.date), 'yyyy-MM')
+    const monthKey = fnsFormat(parseISO(row.date), 'yyyy-MM')
     const existing = groups.get(monthKey) || []
     existing.push(row)
     groups.set(monthKey, existing)
@@ -128,7 +140,7 @@ export function calculateMonthlyAverages(
 
   for (const [monthKey, rows] of groups) {
     const row: { month: string; [key: string]: number | string } = {
-      month: format(parseISO(`${monthKey}-01`), 'MMM yyyy'),
+      month: fnsFormat(parseISO(`${monthKey}-01`), 'MMM yyyy'),
     }
 
     for (const variable of variables) {
@@ -353,4 +365,27 @@ export function getDatesInRange(start: string, end: string): Date[] {
     start: parseISO(start),
     end: parseISO(end),
   })
+}
+
+/**
+ * 📊 Calculate statistics from chart data
+ */
+export function calculateStats(
+  data: ChartDataPoint[],
+  variable: string,
+): { avg: number; min: number; max: number; sum: number; count: number } {
+  const values = data
+    .map((d) => d[variable])
+    .filter((v): v is number => typeof v === 'number' && !Number.isNaN(v))
+
+  if (values.length === 0) {
+    return { avg: 0, min: 0, max: 0, sum: 0, count: 0 }
+  }
+
+  const sum = values.reduce((a, b) => a + b, 0)
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const avg = sum / values.length
+
+  return { avg, min, max, sum, count: values.length }
 }

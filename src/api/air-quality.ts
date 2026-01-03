@@ -31,6 +31,7 @@ export const getAirQuality = createServerFn({ method: 'GET' })
       latitude: data.latitude,
       longitude: data.longitude,
       hourly: data.hourly,
+      current: data.current,
       timeformat: data.timeformat,
       timezone: data.timezone ?? DEFAULT_TIMEZONE,
       past_days: data.past_days,
