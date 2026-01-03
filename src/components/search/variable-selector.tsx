@@ -119,18 +119,20 @@ export function VariableSelector({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger>
-        <Button
-          variant="outline"
-          size={size}
-          role="combobox"
-          aria-expanded={open}
-          className={cn('justify-between', className)}
-        >
-          <span className="truncate">{displayText}</span>
-          <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={
+          <Button
+            variant="outline"
+            size={size}
+            role="combobox"
+            aria-expanded={open}
+            className={cn('justify-between', className)}
+          >
+            <span className="truncate">{displayText}</span>
+            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        }
+      />
       <PopoverContent className="w-[320px] p-0" align="start">
         {/* 📊 Selected badges */}
         {value.length > 0 && (

@@ -1,396 +1,488 @@
 /**
- * 🔍 Explore Route
- * Main historical weather explorer with search, filters, and charts
+ * 🧭 Explore Route
+ * Spatial map-first experience with weather data panels
+ * Includes contextual panels (marine, flood) based on location
  */
-
 import { createFileRoute } from '@tanstack/react-router'
-import { Calendar, MapPin, Share2 } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useCallback, useMemo, useRef } from 'react'
-import { toast } from 'sonner'
-import { getHistoricalWeather } from '@/api'
-import type { DailyWeatherVariable } from '@/api/types'
-import type { ChartDataPoint } from '@/components/charts'
+import { useCallback, useRef, useState } from 'react'
+import { z } from 'zod'
+
 import {
-  ChartControls,
-  exportChartToCsv,
-  exportChartToPng,
-  PrecipitationChart,
-  TemperatureChart,
-  WeatherChart,
-} from '@/components/charts'
-import { WeatherStats, WeatherTable } from '@/components/data'
-import { Container } from '@/components/layout'
+  getAirQuality,
+  getFloodData,
+  getHistoricalWeather,
+  getMarineWeather,
+  getWeatherForecast,
+} from '@/api'
+import type { HistoricalDailyWeatherVariable } from '@/api/types'
+import { MapCanvas, type MapCanvasHandle, MapMarker } from '@/components/map'
 import {
-  CitySearch,
-  DateRangePicker,
-  VariableSelector,
-} from '@/components/search'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { calculateStats, getDefaultDateRange } from '@/lib/chart-config'
-import type { ChartType, WeatherVariable } from '@/lib/search-params'
-import { exploreSearchSchema, serializeSearchParams } from '@/lib/search-params'
-import { formatDisplayDate, transformWeatherData } from '@/lib/weather-utils'
+  AirQualityPanel,
+  BentoGrid,
+  FloodPanel,
+  ForecastPanel,
+  MarinePanel,
+  StatsPanel,
+  WeatherPanel,
+} from '@/components/panels'
+import {
+  calculateStats,
+  formatDate,
+  transformWeatherData,
+} from '@/lib/weather-utils'
+
+// 🔍 Search params schema
+const exploreSearchSchema = z.object({
+  q: z.string().optional(),
+  lat: z.coerce.number().optional(),
+  lon: z.coerce.number().optional(),
+})
+
+// 🌊 Check if location is coastal (simple heuristic based on proximity to known coastal areas)
+function isCoastalLocation(lat: number, lon: number): boolean {
+  // Simplified: locations near major coasts
+  // In production, this would use a proper coastline dataset
+  const coastalRegions = [
+    { latMin: 25, latMax: 50, lonMin: -130, lonMax: -115 }, // US West Coast
+    { latMin: 25, latMax: 48, lonMin: -82, lonMax: -65 }, // US East Coast
+    { latMin: -45, latMax: -10, lonMin: 110, lonMax: 155 }, // Australia
+    { latMin: 50, latMax: 60, lonMin: -10, lonMax: 5 }, // UK
+    { latMin: 30, latMax: 45, lonMin: 125, lonMax: 145 }, // Japan
+  ]
+
+  return coastalRegions.some(
+    (r) =>
+      lat >= r.latMin && lat <= r.latMax && lon >= r.lonMin && lon <= r.lonMax,
+  )
+}
+
+// 🏞️ Check if location is near a major river
+function isRiverineLocation(lat: number, lon: number): boolean {
+  // Simplified: locations near major river systems
+  const riverRegions = [
+    { latMin: 29, latMax: 50, lonMin: -95, lonMax: -88 }, // Mississippi
+    { latMin: 45, latMax: 55, lonMin: -5, lonMax: 15 }, // Rhine/Danube region
+    { latMin: 20, latMax: 35, lonMin: 75, lonMax: 95 }, // Ganges/Brahmaputra
+    { latMin: 25, latMax: 45, lonMin: 100, lonMax: 125 }, // Yangtze/Yellow River
+  ]
+
+  return riverRegions.some(
+    (r) =>
+      lat >= r.latMin && lat <= r.latMax && lon >= r.lonMin && lon <= r.lonMax,
+  )
+}
 
 export const Route = createFileRoute('/explore')({
   validateSearch: exploreSearchSchema,
+  loaderDeps: ({ search }) => ({ search }),
+  loader: async ({ deps: { search } }) => {
+    // 📍 If we have coordinates, fetch weather data
+    if (search.lat && search.lon) {
+      const today = new Date()
+      const startDate = new Date(today)
+      startDate.setDate(startDate.getDate() - 7) // Last 7 days
 
-  head: () => ({
+      const isCoastal = isCoastalLocation(search.lat, search.lon)
+      const isRiverine = isRiverineLocation(search.lat, search.lon)
+
+      try {
+        // Base data fetches
+        const basePromises = [
+          getHistoricalWeather({
+            data: {
+              latitude: search.lat,
+              longitude: search.lon,
+              start_date: formatDate(startDate),
+              end_date: formatDate(today),
+              daily: [
+                'temperature_2m_max',
+                'temperature_2m_min',
+                'temperature_2m_mean',
+                'precipitation_sum',
+                'wind_speed_10m_max',
+              ] as HistoricalDailyWeatherVariable[],
+              timezone: 'auto',
+            },
+          }),
+          getWeatherForecast({
+            data: {
+              latitude: search.lat,
+              longitude: search.lon,
+              daily: [
+                'temperature_2m_max',
+                'temperature_2m_min',
+                'weather_code',
+                'precipitation_sum',
+              ],
+              timezone: 'auto',
+            },
+          }),
+          getAirQuality({
+            data: {
+              latitude: search.lat,
+              longitude: search.lon,
+              current: [
+                'european_aqi',
+                'pm2_5',
+                'pm10',
+                'nitrogen_dioxide',
+                'ozone',
+              ],
+            },
+          }),
+        ]
+
+        // Contextual data fetches
+        const marinePromise = isCoastal
+          ? getMarineWeather({
+              data: {
+                latitude: search.lat,
+                longitude: search.lon,
+                hourly: [
+                  'wave_height',
+                  'wave_period',
+                  'wave_direction',
+                  'ocean_current_velocity',
+                  'ocean_current_direction',
+                ],
+                daily: ['wave_height_max', 'wave_period_max'],
+              },
+            }).catch(() => null)
+          : Promise.resolve(null)
+
+        const floodPromise = isRiverine
+          ? getFloodData({
+              data: {
+                latitude: search.lat,
+                longitude: search.lon,
+                daily: [
+                  'river_discharge',
+                  'river_discharge_max',
+                  'river_discharge_mean',
+                ],
+              },
+            }).catch(() => null)
+          : Promise.resolve(null)
+
+        const [historical, forecast, airQuality, marine, flood] =
+          await Promise.all([...basePromises, marinePromise, floodPromise])
+
+        return {
+          location: search.q,
+          coordinates: { lat: search.lat, lon: search.lon },
+          historical,
+          forecast,
+          airQuality,
+          marine,
+          flood,
+          isCoastal,
+          isRiverine,
+        }
+      } catch {
+        return {
+          location: search.q,
+          coordinates: { lat: search.lat, lon: search.lon },
+          historical: null,
+          forecast: null,
+          airQuality: null,
+          marine: null,
+          flood: null,
+          isCoastal,
+          isRiverine,
+        }
+      }
+    }
+
+    return {
+      location: null,
+      coordinates: null,
+      historical: null,
+      forecast: null,
+      airQuality: null,
+      marine: null,
+      flood: null,
+      isCoastal: false,
+      isRiverine: false,
+    }
+  },
+
+  head: ({ loaderData }) => ({
     meta: [
-      { title: 'Explore Weather | Weather Vibes' },
+      {
+        title: loaderData?.location
+          ? `${loaderData.location} Weather | Weather Vibes`
+          : 'Explore | Weather Vibes',
+      },
       {
         name: 'description',
-        content:
-          'Explore historical weather patterns. View temperature trends, precipitation data, and climate analysis from 1940 to present.',
+        content: loaderData?.location
+          ? `Explore weather data for ${loaderData.location}`
+          : 'Explore weather patterns and climate data for any location',
       },
     ],
   }),
 
-  loader: async ({ location }) => {
-    // Parse search params manually since loader doesn't get validated search
-    const searchParams = new URLSearchParams(location.search)
-    const lat = searchParams.get('lat')
-    const lon = searchParams.get('lon')
-    const start = searchParams.get('start')
-    const end = searchParams.get('end')
-    const varsStr = searchParams.get('vars')
-
-    // 📍 Only fetch if we have coordinates
-    if (!lat || !lon) {
-      return { data: null, hasLocation: false }
-    }
-
-    // 📅 Use default date range if not specified
-    const defaultRange = getDefaultDateRange()
-    const startDate = start || defaultRange.start
-    const endDate = end || defaultRange.end
-
-    // 📊 Parse variables
-    const vars = varsStr
-      ? varsStr.split(',').filter(Boolean)
-      : [
-          'temperature_2m_max',
-          'temperature_2m_min',
-          'temperature_2m_mean',
-          'precipitation_sum',
-        ]
-
-    // 📊 Fetch historical weather data
-    const response = await getHistoricalWeather({
-      data: {
-        latitude: Number.parseFloat(lat),
-        longitude: Number.parseFloat(lon),
-        start_date: startDate,
-        end_date: endDate,
-        daily: vars as DailyWeatherVariable[],
-        timezone: 'auto',
-      },
-    })
-
-    return {
-      data: response,
-      hasLocation: true,
-      dateRange: { start: startDate, end: endDate },
-    }
-  },
-
-  pendingComponent: ExplorePending,
-  component: ExploreComponent,
+  component: ExplorePage,
 })
 
-function ExplorePending() {
-  return (
-    <Container className="py-8">
-      <div className="space-y-6">
-        <Skeleton className="h-10 w-full max-w-md" />
-        <div className="grid gap-4 sm:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={`skeleton-${i}`} className="h-24" />
-          ))}
-        </div>
-        <Skeleton className="h-[400px]" />
-      </div>
-    </Container>
-  )
-}
+function ExplorePage() {
+  const {
+    location,
+    coordinates,
+    historical,
+    forecast,
+    airQuality,
+    marine,
+    flood,
+    isCoastal,
+    isRiverine,
+  } = Route.useLoaderData()
+  const mapRef = useRef<MapCanvasHandle>(null)
+  const [selectedLocation, setSelectedLocation] = useState(coordinates)
 
-function ExploreComponent() {
-  const loaderData = Route.useLoaderData()
-  const search = Route.useSearch()
-  const navigate = Route.useNavigate()
-  const chartRef = useRef<HTMLDivElement>(null)
-
-  // Extract loader data with fallbacks
-  const data = loaderData?.data ?? null
-  const hasLocation = loaderData?.hasLocation ?? false
-  const dateRange = loaderData?.dateRange
-
-  // Get variables from search (with defaults)
-  const selectedVars: WeatherVariable[] = search.vars || [
-    'temperature_2m_max',
-    'temperature_2m_min',
-  ]
-
-  // 📊 Transform data for charts
-  const chartData = useMemo((): ChartDataPoint[] => {
-    if (!data?.daily) return []
-    return transformWeatherData(data, selectedVars)
-  }, [data, selectedVars])
-
-  // 📊 Calculate statistics
-  const stats = useMemo(() => {
-    if (chartData.length === 0) return null
-
-    const tempMax = chartData
-      .map((d) => d.temperature_2m_max as number)
-      .filter((v) => v !== null && v !== undefined)
-    const tempMin = chartData
-      .map((d) => d.temperature_2m_min as number)
-      .filter((v) => v !== null && v !== undefined)
-    const precip = chartData
-      .map((d) => d.precipitation_sum as number)
-      .filter((v) => v !== null && v !== undefined)
-
-    return {
-      avgTemp:
-        tempMax.length > 0 && tempMin.length > 0
-          ? (calculateStats(tempMax).mean + calculateStats(tempMin).mean) / 2
-          : undefined,
-      maxTemp: tempMax.length > 0 ? calculateStats(tempMax).max : undefined,
-      minTemp: tempMin.length > 0 ? calculateStats(tempMin).min : undefined,
-      totalPrecip:
-        precip.length > 0 ? precip.reduce((a, b) => a + b, 0) : undefined,
-      rainyDays:
-        precip.length > 0 ? precip.filter((v) => v > 0).length : undefined,
-    }
-  }, [chartData])
-
-  // 🔄 Update handlers - serialize params properly
+  // 🎯 Handle map location selection
   const handleLocationSelect = useCallback(
-    (result: { name: string; latitude: number; longitude: number }) => {
-      navigate({
-        search: serializeSearchParams({
-          ...search,
-          q: result.name,
-          lat: result.latitude,
-          lon: result.longitude,
-        }),
-      })
+    (loc: { lng: number; lat: number }) => {
+      setSelectedLocation({ lat: loc.lat, lon: loc.lng })
     },
-    [navigate, search],
+    [],
   )
 
-  const handleDateChange = useCallback(
-    (range: { start: string; end: string }) => {
-      navigate({
-        search: serializeSearchParams({
-          ...search,
-          start: range.start,
-          end: range.end,
-        }),
-      })
-    },
-    [navigate, search],
-  )
-
-  const handleVariablesChange = useCallback(
-    (vars: WeatherVariable[]) => {
-      navigate({
-        search: serializeSearchParams({
-          ...search,
-          vars,
-        }),
-      })
-    },
-    [navigate, search],
-  )
-
-  const handleChartTypeChange = useCallback(
-    (chart: ChartType) => {
-      navigate({
-        search: serializeSearchParams({
-          ...search,
-          chart,
-        }),
-      })
-    },
-    [navigate, search],
-  )
-
-  const handleExport = useCallback(
-    (format: 'png' | 'csv') => {
-      if (format === 'csv') {
-        exportChartToCsv(
-          chartData,
-          selectedVars,
-          `weather-data-${search.q || 'location'}`,
-        )
-        toast.success('CSV exported successfully')
-      } else {
-        exportChartToPng(
-          chartRef.current,
-          `weather-chart-${search.q || 'location'}`,
-        )
-        toast.success('Chart exported successfully')
+  // 📊 Prepare weather data (ensure numeric types)
+  const currentWeather = historical?.daily
+    ? {
+        temperature: Number(historical.daily.temperature_2m_mean?.[0] ?? 0),
+        apparentTemperature:
+          historical.daily.temperature_2m_max?.[0] !== undefined
+            ? Number(historical.daily.temperature_2m_max[0])
+            : undefined,
+        humidity: undefined,
+        windSpeed:
+          historical.daily.wind_speed_10m_max?.[0] !== undefined
+            ? Number(historical.daily.wind_speed_10m_max[0])
+            : undefined,
+        precipitation:
+          historical.daily.precipitation_sum?.[0] !== undefined
+            ? Number(historical.daily.precipitation_sum[0])
+            : undefined,
       }
-    },
-    [chartData, selectedVars, search.q],
-  )
+    : undefined
 
-  const handleShare = useCallback(() => {
-    const url = window.location.href
-    navigator.clipboard.writeText(url)
-    toast.success('Link copied to clipboard!')
-  }, [])
+  const forecastData = forecast?.daily?.time?.map((date, i) => ({
+    date: String(date),
+    tempMax: Number(forecast.daily?.temperature_2m_max?.[i] ?? 0),
+    tempMin: Number(forecast.daily?.temperature_2m_min?.[i] ?? 0),
+    weatherCode:
+      forecast.daily?.weather_code?.[i] !== undefined
+        ? Number(forecast.daily.weather_code[i])
+        : undefined,
+    precipitation:
+      forecast.daily?.precipitation_sum?.[i] !== undefined
+        ? Number(forecast.daily.precipitation_sum[i])
+        : undefined,
+  }))
+
+  const airQualityData = airQuality?.current
+    ? {
+        aqi: Number(airQuality.current.european_aqi ?? 0),
+        pm25:
+          airQuality.current.pm2_5 !== undefined
+            ? Number(airQuality.current.pm2_5)
+            : undefined,
+        pm10:
+          airQuality.current.pm10 !== undefined
+            ? Number(airQuality.current.pm10)
+            : undefined,
+        no2:
+          airQuality.current.nitrogen_dioxide !== undefined
+            ? Number(airQuality.current.nitrogen_dioxide)
+            : undefined,
+        o3:
+          airQuality.current.ozone !== undefined
+            ? Number(airQuality.current.ozone)
+            : undefined,
+      }
+    : undefined
+
+  // 🌊 Marine data
+  const marineData = marine?.hourly
+    ? {
+        waveHeight:
+          marine.hourly.wave_height?.[0] !== undefined
+            ? Number(marine.hourly.wave_height[0])
+            : undefined,
+        wavePeriod:
+          marine.hourly.wave_period?.[0] !== undefined
+            ? Number(marine.hourly.wave_period[0])
+            : undefined,
+        waveDirection:
+          marine.hourly.wave_direction?.[0] !== undefined
+            ? Number(marine.hourly.wave_direction[0])
+            : undefined,
+        currentSpeed:
+          marine.hourly.ocean_current_velocity?.[0] !== undefined
+            ? Number(marine.hourly.ocean_current_velocity[0])
+            : undefined,
+        currentDirection:
+          marine.hourly.ocean_current_direction?.[0] !== undefined
+            ? Number(marine.hourly.ocean_current_direction[0])
+            : undefined,
+      }
+    : undefined
+
+  // 🌊 Flood data
+  const floodData = flood?.daily
+    ? {
+        riverDischarge:
+          flood.daily.river_discharge?.[0] !== undefined
+            ? Number(flood.daily.river_discharge[0])
+            : undefined,
+        riverDischargeMax:
+          flood.daily.river_discharge_max?.[0] !== undefined
+            ? Number(flood.daily.river_discharge_max[0])
+            : undefined,
+        riverDischargeMean:
+          flood.daily.river_discharge_mean?.[0] !== undefined
+            ? Number(flood.daily.river_discharge_mean[0])
+            : undefined,
+      }
+    : undefined
+
+  // 📊 Calculate stats from historical data
+  const chartData = historical?.daily
+    ? transformWeatherData(historical, [
+        'temperature_2m_max',
+        'temperature_2m_min',
+        'temperature_2m_mean',
+        'precipitation_sum',
+        'wind_speed_10m_max',
+      ])
+    : []
+  const stats =
+    chartData.length > 0
+      ? calculateStats(chartData, 'temperature_2m_mean')
+      : null
 
   return (
-    <Container className="py-8">
+    <div className="relative h-full w-full">
+      {/* 🗺️ Map canvas (full-screen background) */}
+      <MapCanvas
+        ref={mapRef}
+        center={coordinates ? [coordinates.lon, coordinates.lat] : undefined}
+        zoom={coordinates ? 10 : 4}
+        onLocationSelect={handleLocationSelect}
+      >
+        {/* 📍 Selected location marker */}
+        {selectedLocation && (
+          <MapMarker
+            longitude={selectedLocation.lon}
+            latitude={selectedLocation.lat}
+            label={location ?? undefined}
+            variant="selected"
+            size="lg"
+          />
+        )}
+      </MapCanvas>
+
+      {/* 📊 Bento panel overlay */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="space-y-6"
+        transition={{ delay: 0.3, duration: 0.4 }}
+        className="absolute bottom-4 left-4 right-4 z-10"
       >
-        {/* 🔍 Search & Filters */}
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row gap-4">
-            {/* 🏙️ City Search */}
-            <div className="flex-1 max-w-md">
-              <CitySearch
-                placeholder="Search for a city..."
-                defaultValue={search.q}
-                onSelect={handleLocationSelect}
-                size="lg"
-              />
-            </div>
-
-            {/* 🔧 Actions */}
-            <div className="flex gap-2">
-              <Button variant="outline" size="icon" onClick={handleShare}>
-                <Share2 className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-
-          {/* 📅 Filters */}
-          <div className="flex flex-wrap gap-3">
-            <DateRangePicker
-              value={{
-                start: search.start || dateRange?.start,
-                end: search.end || dateRange?.end,
-              }}
-              onChange={handleDateChange}
+        {coordinates ? (
+          <BentoGrid columns={12} gap="md" className="max-w-7xl mx-auto">
+            {/* 🌡️ Current weather */}
+            <WeatherPanel
+              location={location ?? 'Selected Location'}
+              data={currentWeather}
+              isLoading={!historical}
+              colSpan={3}
+              animationDelay={0}
             />
-            <VariableSelector
-              value={selectedVars}
-              onChange={handleVariablesChange}
-              className="w-[200px]"
-            />
-            <ChartControls
-              chartType={search.chart || 'line'}
-              onChartTypeChange={handleChartTypeChange}
-              onExport={handleExport}
-              compact
-            />
-          </div>
-        </div>
 
-        {/* 📊 Content */}
-        {!hasLocation ? (
-          // 🎯 Empty state
-          <Card className="py-16">
-            <CardContent className="flex flex-col items-center justify-center text-center">
-              <MapPin className="h-12 w-12 text-muted-foreground mb-4" />
-              <h2 className="text-xl font-semibold mb-2">
-                Select a Location to Explore
-              </h2>
-              <p className="text-muted-foreground max-w-md">
-                Search for a city above to view historical weather data, trends,
-                and climate analysis from 1940 to present.
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          // 📊 Weather data
-          <div className="space-y-6">
-            {/* 📍 Location header */}
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <MapPin className="h-4 w-4" />
-              <span className="font-medium text-foreground">{search.q}</span>
-              <span>•</span>
-              <Calendar className="h-4 w-4" />
-              <span>
-                {dateRange &&
-                  `${formatDisplayDate(dateRange.start)} - ${formatDisplayDate(dateRange.end)}`}
-              </span>
-            </div>
+            {/* 🌬️ Air quality */}
+            <AirQualityPanel
+              data={airQualityData}
+              isLoading={!airQuality}
+              colSpan={3}
+              animationDelay={1}
+            />
 
-            {/* 📊 Stats cards */}
+            {/* 📅 Forecast */}
+            <ForecastPanel
+              data={forecastData}
+              isLoading={!forecast}
+              colSpan="half"
+              animationDelay={2}
+            />
+
+            {/* 📊 Stats */}
             {stats && (
-              <WeatherStats
-                avgTemp={stats.avgTemp}
-                maxTemp={stats.maxTemp}
-                minTemp={stats.minTemp}
-                totalPrecip={stats.totalPrecip}
-                rainyDays={stats.rainyDays}
+              <StatsPanel
+                title="7-Day Summary"
+                stats={[
+                  {
+                    label: 'Avg Temp',
+                    value: stats.avg.toFixed(1),
+                    unit: '°C',
+                  },
+                  { label: 'Max', value: stats.max.toFixed(1), unit: '°C' },
+                  { label: 'Min', value: stats.min.toFixed(1), unit: '°C' },
+                  {
+                    label: 'Range',
+                    value: (stats.max - stats.min).toFixed(1),
+                    unit: '°C',
+                  },
+                ]}
+                colSpan={isCoastal || isRiverine ? 3 : 4}
+                columns={isCoastal || isRiverine ? 2 : 4}
+                animationDelay={3}
               />
             )}
 
-            {/* 📈 Charts */}
-            <Tabs defaultValue="temperature" className="space-y-4">
-              <TabsList>
-                <TabsTrigger value="temperature">🌡️ Temperature</TabsTrigger>
-                <TabsTrigger value="precipitation">🌧️ Precipitation</TabsTrigger>
-                <TabsTrigger value="custom">📊 Custom</TabsTrigger>
-                <TabsTrigger value="table">📋 Table</TabsTrigger>
-              </TabsList>
+            {/* 🌊 Marine panel (coastal locations only) */}
+            <MarinePanel
+              data={marineData}
+              isLoading={!marine && isCoastal}
+              visible={isCoastal}
+              colSpan={3}
+              animationDelay={4}
+            />
 
-              <div ref={chartRef}>
-                <TabsContent value="temperature">
-                  <TemperatureChart
-                    data={chartData}
-                    height={400}
-                    showRange
-                    showFreezingLine
-                  />
-                </TabsContent>
-
-                <TabsContent value="precipitation">
-                  <PrecipitationChart data={chartData} height={400} />
-                </TabsContent>
-
-                <TabsContent value="custom">
-                  <WeatherChart
-                    data={chartData}
-                    variables={selectedVars}
-                    chartType={search.chart || 'line'}
-                    height={400}
-                    title="Custom Chart"
-                  />
-                </TabsContent>
-              </div>
-
-              <TabsContent value="table">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Weather Data</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <WeatherTable
-                      data={chartData}
-                      variables={selectedVars}
-                      maxRows={30}
-                    />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-          </div>
+            {/* 🌊 Flood panel (riverine locations only) */}
+            <FloodPanel
+              data={floodData}
+              isLoading={!flood && isRiverine}
+              visible={isRiverine}
+              colSpan={3}
+              animationDelay={5}
+            />
+          </BentoGrid>
+        ) : (
+          // 🏠 Empty state
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="glass rounded-3xl p-8 max-w-md mx-auto text-center"
+          >
+            <div className="text-5xl mb-4">🌍</div>
+            <h2 className="font-display text-2xl font-bold mb-2">
+              Explore Weather Data
+            </h2>
+            <p className="text-muted-foreground mb-4">
+              Search for a city or click anywhere on the map to explore weather
+              patterns and climate data.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Press <kbd className="px-2 py-1 bg-muted rounded text-xs">⌘K</kbd>{' '}
+              to search
+            </p>
+          </motion.div>
         )}
       </motion.div>
-    </Container>
+    </div>
   )
 }
