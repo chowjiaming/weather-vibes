@@ -1,0 +1,268 @@
+---
+description: TanStack Start: Hosting and Deployment Guide
+globs: vite.config.ts,package.json
+alwaysApply: false
+---
+
+# Hosting
+
+Hosting is the process of deploying your application to the internet so that users can access it. This is a critical part of any web development project, ensuring your application is available to the world. TanStack Start is built on Vite, a powerful dev/build platform that allows us to make it possible to deploy your application to any hosting provider.
+
+## What should I use?
+
+TanStack Start is **designed to work with any hosting provider**, so if you already have a hosting provider in mind, you can deploy your application there using the full-stack APIs provided by TanStack Start.
+
+However, since hosting is one of the most crucial aspects of your application's performance, reliability, and scalability, we recommend using one of our **Official Hosting Partners**: [Cloudflare](https://www.cloudflare.com?utm_source=tanstack) or [Netlify](https://www.netlify.com?utm_source=tanstack).
+
+## Deployment
+
+> [!WARNING]
+> The page is still a work in progress. We'll keep updating this page with guides on deployment to different hosting providers soon!
+
+Once you've chosen a deployment target, you can follow the deployment guidelines below to deploy your TanStack Start application to the hosting provider of your choice:
+
+- [`cloudflare-workers`](#cloudflare-workers--official-partner): Deploy to Cloudflare Workers
+- [`netlify`](#netlify): Deploy to Netlify
+- [`nitro`](#nitro): Deploy using Nitro
+- [`vercel`](#vercel): Deploy to Vercel
+- [`railway`](#nodejs--railway--docker): Deploy to Railway
+- [`node-server`](#nodejs--railway--docker): Deploy to a Node.js server
+- [`bun`](#bun): Deploy to a Bun server
+- [`appwrite-sites`](#appwrite-sites): Deploy to Appwrite Sites
+- ... and more to come!
+
+### Cloudflare Workers ⭐ _Official Partner_
+
+When deploying to Cloudflare Workers, you'll need to complete a few extra steps before your users can start using your app.
+
+1. Install `@cloudflare/vite-plugin` and `wrangler`
+
+```bash
+pnpm add -D @cloudflare/vite-plugin wrangler
+```
+
+2. Add the Cloudflare plugin to your `vite.config.ts` file
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite'
+import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+import { cloudflare } from '@cloudflare/vite-plugin'
+import viteReact from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [
+    cloudflare({ viteEnvironment: { name: 'ssr' } }),
+    tanstackStart(),
+    viteReact(),
+  ],
+})
+```
+
+3. Add a `wrangler.jsonc` config file
+
+```json
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tanstack-start-app",
+  "compatibility_date": "2025-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "@tanstack/react-start/server-entry"
+}
+```
+
+4. Modify the scripts in your `package.json` file
+
+```json
+{
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build && tsc --noEmit",
+    "preview": "vite preview",
+    "deploy": "npm run build && wrangler deploy",
+    "cf-typegen": "wrangler types"
+  }
+}
+```
+
+5. Login with Wrangler to authenticate with your Cloudflare account.
+
+```bash
+npx wrangler login
+```
+
+or if using pnpm:
+
+```bash
+pnpm dlx wrangler login
+```
+
+To check current user use `wrangler whoami`.
+
+6. Deploy
+
+```bash
+pnpm run deploy
+```
+
+Deploy your application to Cloudflare Workers using their one-click deployment process, and you're ready to go!
+
+A full TanStack Start example for Cloudflare Workers is available [here](https://github.com/TanStack/router/tree/main/examples/react/start-basic-cloudflare).
+
+### Netlify ⭐ _Official Partner_
+
+Install and add the [`@netlify/vite-plugin-tanstack-start`](https://www.npmjs.com/package/@netlify/vite-plugin-tanstack-start) plugin, which configures your build for Netlify deployment and provides full Netlify production platform emulation in local dev:
+
+```bash
+npm install --save-dev @netlify/vite-plugin-tanstack-start
+# or...
+pnpm add --save-dev @netlify/vite-plugin-tanstack-start
+# or yarn, bun, etc.
+```
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite'
+import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+import netlify from '@netlify/vite-plugin-tanstack-start' // ← add this
+import viteReact from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [
+    tanstackStart(),
+    netlify(), // ← add this (anywhere in the array is fine)
+    viteReact(),
+  ],
+})
+```
+
+Finally, use [Netlify CLI](https://developers.netlify.com/cli/) to deploy your app:
+
+```bash
+npx netlify deploy
+```
+
+If this is a new Netlify project, you'll be prompted to initialize it and build settings will be automatically configured for you.
+
+For more detailed documentation, check out the full [TanStack Start on Netlify docs](https://docs.netlify.com/build/frameworks/framework-setup-guides/tanstack-start/).
+
+#### Manual configuration
+
+Alternatively, if you prefer manual configuration, you can add a `netlify.toml` file to your project root:
+
+```toml
+[build]
+  command = "vite build"
+  publish = "dist/client"
+[dev]
+  command = "vite dev"
+  port = 3000
+```
+
+Or you can set the above settings directly [in the Netlify app](https://docs.netlify.com/build/configure-builds/overview/#build-settings).
+
+### Nitro
+
+[Nitro](https://v3.nitro.build/) is an agnostic layer that allows you to deploy TanStack Start applications to [a wide range of hostings](https://v3.nitro.build/deploy).
+
+**⚠️ The [`nitro/vite`](https://v3.nitro.build/) plugin natively integrates with Vite Environments API as the underlying build tool for TanStack Start. It is still under active development and receives regular updates. Please report any issues you encounter with reproduction so they can be investigated.**
+
+```tsx
+import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+import { defineConfig } from 'vite'
+import { nitro } from 'nitro/vite'
+import viteReact from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [tanstackStart(), nitro(), viteReact()],
+  nitro: {},
+})
+```
+
+### Vercel
+
+Follow the [`Nitro`](#nitro) deployment instructions.
+Deploy your application to Vercel using their one-click deployment process, and you're ready to go!
+
+### Node.js / Railway / Docker
+
+Follow the [`Nitro`](#nitro) deployment instructions. Use the `node` command to start your application from the server from the build output files.
+
+Ensure `build` and `start` npm scripts are present in your `package.json` file:
+
+```json
+    "build": "vite build",
+    "start": "node .output/server/index.mjs"
+```
+
+Then you can run the following command to build your application:
+
+```sh
+npm run build
+```
+
+You can start your application by running:
+
+```sh
+npm run start
+```
+
+### Bun
+
+> [!IMPORTANT]
+> Currently, the Bun specific deployment guidelines only work with React 19. If you are using React 18, please refer to the [Node.js](#nodejs--railway--docker) deployment guidelines.
+
+Make sure that your `react` and `react-dom` packages are set to version 19.0.0 or higher in your `package.json` file. If not, run the following command to upgrade the packages:
+
+```sh
+bun install react@19 react-dom@19
+```
+
+Follow the [`Nitro`](#nitro) deployment instructions.
+Depending on how you invoke the build, you might need to set the `'bun'` preset in the Nitro configuration:
+
+```ts
+// vite.config.ts
+import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+import { defineConfig } from 'vite'
+import { nitro } from 'nitro/vite'
+import viteReact from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [tanstackStart(), nitro({ preset: 'bun' }), viteReact()],
+})
+```
+
+### Appwrite Sites
+
+When deploying to [Appwrite Sites](https://appwrite.io/products/sites), you'll need to complete a few steps:
+
+1. **Create a TanStack Start app** (or use an existing one)
+
+```bash
+npm create @tanstack/start@latest
+```
+
+2. **Push your project to a GitHub repository**
+
+Create a [GitHub repository](https://github.com/new) and push your code.
+
+3. **Create an Appwrite project**
+
+Head to [Appwrite Cloud](https://cloud.appwrite.io) and sign up if you haven't already, then create your first project.
+
+4. **Deploy your site**
+
+In your Appwrite project, navigate to the **Sites** page from the sidebar. Click on the **Create site**, select **Connect a repository**, connect your GitHub account and select your repository.
+
+1. Select the **production branch** and **root directory**
+2. Verify **TanStack Start** is selected as the framework
+3. Confirm the build settings:
+   - **Install command:** `npm install`
+   - **Build command:** `npm run build`
+   - **Output directory:** `./dist` (if you're using Nitro v2 or v3, this should be `./.output`)
+
+4. Add any required **environment variables**
+5. Click **Deploy**
+
+After successful deployment, click the **Visit site** button to see your deployed application.

@@ -1,0 +1,81 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.3.10/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true,
+    "defaultBranch": "main"
+  },
+  "files": {
+    "ignoreUnknown": false,
+    "includes": ["**", "!**/routeTree.gen.ts", "!**/.cta.json", "!**/*.css"]
+  },
+  "formatter": {
+    "enabled": true,
+    "formatWithErrors": false,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineEnding": "lf",
+    "lineWidth": 80,
+    "attributePosition": "auto",
+    "bracketSpacing": true
+  },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "correctness": {
+        "noUnusedImports": "warn",
+        "noUnusedVariables": "warn",
+        "useExhaustiveDependencies": "warn",
+        "useHookAtTopLevel": "error"
+      },
+      "style": {
+        "noNonNullAssertion": "warn",
+        "useConst": "error",
+        "useImportType": "error"
+      },
+      "suspicious": {
+        "noExplicitAny": "warn",
+        "noConsole": "warn",
+        "noArrayIndexKey": "warn",
+        "noDoubleEquals": "error"
+      },
+      "a11y": {
+        "recommended": true,
+        "noLabelWithoutControl": "off",
+        "useSemanticElements": "warn",
+        "useKeyWithClickEvents": "warn",
+        "noRedundantAlt": "warn"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "jsxQuoteStyle": "double",
+      "quoteStyle": "single",
+      "semicolons": "asNeeded",
+      "trailingCommas": "all",
+      "arrowParentheses": "always",
+      "bracketSameLine": false
+    }
+  },
+  "json": {
+    "formatter": {
+      "trailingCommas": "none"
+    }
+  },
+  "css": {
+    "parser": {
+      "cssModules": true,
+      "allowWrongLineComments": true
+    },
+    "linter": {
+      "enabled": false
+    },
+    "formatter": {
+      "enabled": false
+    }
+  }
+}

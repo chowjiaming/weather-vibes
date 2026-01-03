@@ -1,0 +1,51 @@
+# 📦 Dependencies
+node_modules/
+
+# 🏗️ Build outputs
+dist/
+dist-ssr/
+.output/
+.nitro/
+.vinxi/
+
+# 🔧 TanStack generated files
+.tanstack/
+
+# ☁️ Deployment artifacts
+.wrangler/
+
+# 🔐 Environment variables
+.env
+.env.local
+.env.*.local
+
+# 🧪 Test & coverage
+coverage/
+
+# 📝 Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 💻 OS generated files
+.DS_Store
+Thumbs.db
+
+# 🛠️ IDE & editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 📄 TypeScript build info
+*.tsbuildinfo
+
+# 🔒 Local files
+*.local
+
+# 📋 Project-specific
+count.txt
+todos.json
