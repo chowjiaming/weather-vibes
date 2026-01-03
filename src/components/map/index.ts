@@ -20,3 +20,8 @@ export {
 export { MapMarker } from './map-marker'
 export type { MapStyle } from './map-styles'
 export { useMapStyle } from './use-map-style'
+export {
+  getLayerAvailability,
+  useWeatherTilesAvailable,
+  WeatherTileLayers,
+} from './weather-tile-layers'

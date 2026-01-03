@@ -129,7 +129,7 @@ export function LocationButton({
       onClick={handleGetLocation}
       disabled={state === 'loading'}
       className={cn(
-        'absolute bottom-24 right-4 z-20 h-12 w-12 rounded-full',
+        'fixed bottom-24 right-4 z-20 h-12 w-12 rounded-full',
         'shadow-lg backdrop-blur-md',
         'transition-all duration-300',
         state === 'loading' && 'animate-pulse',

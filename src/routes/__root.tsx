@@ -9,16 +9,20 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import {
   createRootRoute,
   HeadContent,
+  Link,
   Outlet,
   Scripts,
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
+import { Home, MapPin } from 'lucide-react'
+import { motion } from 'motion/react'
 import { ThemeProvider } from 'next-themes'
 import { type ReactNode, useState } from 'react'
 
 import { FloatingNav } from '@/components/navigation'
 import { LocationSearchOverlay } from '@/components/search'
 import { Toaster } from '@/components/ui/sonner'
+import { LayerProvider } from '@/contexts'
 import { createQueryClient } from '@/lib/query-client'
 
 import appCss from '../styles.css?url'
@@ -164,7 +168,48 @@ export const Route = createRootRoute({
 
   component: RootComponent,
   shellComponent: RootDocument,
+  notFoundComponent: NotFoundComponent,
 })
+
+/**
+ * 🔍 Not Found Component
+ * Shown when a route doesn't exist
+ */
+function NotFoundComponent() {
+  return (
+    <div className="relative h-full w-full flex items-center justify-center">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.4 }}
+        className="glass rounded-3xl p-8 max-w-md text-center"
+      >
+        <div className="text-6xl mb-4">🌧️</div>
+        <h1 className="font-display text-3xl font-bold mb-2">Page Not Found</h1>
+        <p className="text-muted-foreground mb-6">
+          Looks like this location doesn't exist on our map. Let's get you back
+          on track.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <Link
+            to="/explore"
+            className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+          >
+            <MapPin size={18} />
+            Explore Weather
+          </Link>
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-muted text-muted-foreground font-medium hover:bg-muted/80 transition-colors"
+          >
+            <Home size={18} />
+            Go Home
+          </Link>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
 
 function RootDocument({ children }: { children: ReactNode }) {
   return (
@@ -202,26 +247,25 @@ function RootComponent() {
         enableSystem
         disableTransitionOnChange
       >
-        {/* 🗺️ Full-screen spatial canvas */}
-        <div className="relative h-screen w-screen">
-          {/* 🧭 Floating navigation */}
-          <FloatingNav
-            onSearchOpen={() => setSearchOpen(true)}
-            onLayerToggle={(_layerId, _enabled) => {}}
-          />
+        <LayerProvider>
+          {/* 🗺️ Full-screen spatial canvas */}
+          <div className="relative h-screen w-screen">
+            {/* 🧭 Floating navigation */}
+            <FloatingNav onSearchOpen={() => setSearchOpen(true)} />
 
-          {/* 📄 Route content */}
-          <Outlet />
+            {/* 📄 Route content */}
+            <Outlet />
 
-          {/* 🔍 Search overlay */}
-          <LocationSearchOverlay
-            open={searchOpen}
-            onOpenChange={setSearchOpen}
-          />
+            {/* 🔍 Search overlay */}
+            <LocationSearchOverlay
+              open={searchOpen}
+              onOpenChange={setSearchOpen}
+            />
 
-          {/* 🔔 Toast notifications */}
-          <Toaster />
-        </div>
+            {/* 🔔 Toast notifications */}
+            <Toaster />
+          </div>
+        </LayerProvider>
       </ThemeProvider>
 
       {/* 🔧 React Query DevTools (dev only) */}

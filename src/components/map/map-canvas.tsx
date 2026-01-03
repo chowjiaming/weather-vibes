@@ -20,6 +20,7 @@ import ReactMapGL, {
 
 import { cn } from '@/lib/utils'
 import { useMapStyle } from './use-map-style'
+import { WeatherTileLayers } from './weather-tile-layers'
 
 export interface MapCanvasProps {
   /** 📍 Initial center coordinates [lng, lat] */
@@ -126,6 +127,9 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
               visualizePitch={true}
             />
           )}
+
+          {/* 🌡️ Weather tile layers (temperature, precipitation, etc.) */}
+          {isLoaded && <WeatherTileLayers />}
 
           {/* 📍 Child components (markers, layers, etc.) */}
           {isLoaded && children}
