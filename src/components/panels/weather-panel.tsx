@@ -1,10 +1,13 @@
 /**
  * 🌡️ WeatherPanel Component
  * Displays current temperature and weather conditions
+ *
+ * 🚀 Performance: Wrapped in React.memo for render optimization
  */
 'use client'
 
 import { Cloud, Droplets, Thermometer, Wind } from 'lucide-react'
+import { memo } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -35,7 +38,7 @@ interface WeatherPanelProps {
   animationDelay?: number
 }
 
-export function WeatherPanel({
+export const WeatherPanel = memo(function WeatherPanel({
   location,
   data,
   isLoading = false,
@@ -157,4 +160,4 @@ export function WeatherPanel({
       </BentoPanelContent>
     </BentoPanel>
   )
-}
+})

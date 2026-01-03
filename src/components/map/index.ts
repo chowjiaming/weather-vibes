@@ -1,10 +1,13 @@
 /**
  * 🗺️ Map Components
  * MapLibre-based spatial canvas
+ *
+ * 🚀 Performance: Use LazyMapCanvas for lazy-loading the heavy MapLibre bundle
  */
 
-export type { MapCanvasHandle } from './map-canvas'
-export { MapCanvas } from './map-canvas'
+export { LazyMapCanvas, MapSkeleton } from './lazy-map'
+export { LocationButton } from './location-button'
+export type { MapCanvasHandle, MapCanvasProps } from './map-canvas'
 export {
   AlertsLayer,
   CloudLayer,

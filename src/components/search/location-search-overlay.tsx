@@ -1,12 +1,21 @@
 /**
  * 🔍 LocationSearchOverlay Component
  * Spotlight-style command palette for location search
+ * Includes geolocation support with error handling
  */
 'use client'
 
 import { useNavigate } from '@tanstack/react-router'
-import { Clock, Compass, MapPin, Navigation, Sparkles } from 'lucide-react'
+import {
+  Clock,
+  Compass,
+  Loader2,
+  MapPin,
+  Navigation,
+  Sparkles,
+} from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
 
 import { searchLocations } from '@/api'
 import {
@@ -91,6 +100,7 @@ export function LocationSearchOverlay({
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<LocationResult[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [isGettingLocation, setIsGettingLocation] = useState(false)
 
   // 🔍 Search for locations
   useEffect(() => {
@@ -159,23 +169,70 @@ export function LocationSearchOverlay({
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [open, onOpenChange])
 
-  // 📍 Get current location
-  const handleGetCurrentLocation = useCallback(() => {
-    if (!navigator.geolocation) return
+  // 📍 Get current location with proper error handling
+  const handleGetCurrentLocation = useCallback(async () => {
+    if (!navigator.geolocation) {
+      toast.error('Geolocation not supported', {
+        description: 'Your browser does not support location services.',
+      })
+      return
+    }
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        navigate({
-          to: '/explore',
-          search: {
-            lat: position.coords.latitude,
-            lon: position.coords.longitude,
-          },
+    setIsGettingLocation(true)
+
+    try {
+      const position = await new Promise<GeolocationPosition>(
+        (resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 60000,
+          })
+        },
+      )
+
+      toast.success('Location found!', {
+        description: 'Showing weather for your current location.',
+      })
+
+      navigate({
+        to: '/explore',
+        search: {
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+          q: 'My Location',
+        },
+      })
+      onOpenChange(false)
+    } catch (error) {
+      if (error instanceof GeolocationPositionError) {
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            toast.error('Location access denied', {
+              description:
+                'Please enable location permissions in your browser settings.',
+            })
+            break
+          case error.POSITION_UNAVAILABLE:
+            toast.error('Location unavailable', {
+              description:
+                'Unable to determine your location. Try again later.',
+            })
+            break
+          case error.TIMEOUT:
+            toast.error('Location request timed out', {
+              description: 'Please try again.',
+            })
+            break
+        }
+      } else {
+        toast.error('Location error', {
+          description: 'An unexpected error occurred. Please try again.',
         })
-        onOpenChange(false)
-      },
-      (_error) => {},
-    )
+      }
+    } finally {
+      setIsGettingLocation(false)
+    }
   }, [navigate, onOpenChange])
 
   return (
@@ -228,9 +285,20 @@ export function LocationSearchOverlay({
             <>
               {/* 📍 Quick actions */}
               <CommandGroup heading="Quick Actions">
-                <CommandItem onSelect={handleGetCurrentLocation}>
-                  <Navigation className="text-primary" />
-                  <span>Use my current location</span>
+                <CommandItem
+                  onSelect={handleGetCurrentLocation}
+                  disabled={isGettingLocation}
+                >
+                  {isGettingLocation ? (
+                    <Loader2 className="text-primary animate-spin" />
+                  ) : (
+                    <Navigation className="text-primary" />
+                  )}
+                  <span>
+                    {isGettingLocation
+                      ? 'Getting location...'
+                      : 'Use my current location'}
+                  </span>
                 </CommandItem>
                 <CommandItem
                   onSelect={() => {

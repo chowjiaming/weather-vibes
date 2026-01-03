@@ -2,21 +2,22 @@
  * 🧭 Explore Route
  * Spatial map-first experience with weather data panels
  * Includes contextual panels (marine, flood) based on location
+ *
+ * 🔄 Performance: Uses TanStack Query for client-side caching
+ * 🌍 Default: Auto-detects user region via timezone
  */
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { motion } from 'motion/react'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { z } from 'zod'
 
-import {
-  getAirQuality,
-  getFloodData,
-  getHistoricalWeather,
-  getMarineWeather,
-  getWeatherForecast,
-} from '@/api'
 import type { HistoricalDailyWeatherVariable } from '@/api/types'
-import { MapCanvas, type MapCanvasHandle, MapMarker } from '@/components/map'
+import {
+  LazyMapCanvas,
+  LocationButton,
+  type MapCanvasHandle,
+  MapMarker,
+} from '@/components/map'
 import {
   AirQualityPanel,
   BentoGrid,
@@ -26,6 +27,17 @@ import {
   StatsPanel,
   WeatherPanel,
 } from '@/components/panels'
+import {
+  extractAirQualityData,
+  extractFloodData,
+  extractMarineData,
+  useAirQuality,
+  useFloodData,
+  useForecast,
+  useHistoricalWeather,
+  useMarineWeather,
+} from '@/hooks/queries'
+import { getDefaultLocation } from '@/lib/default-locations'
 import {
   calculateStats,
   formatDate,
@@ -75,135 +87,12 @@ function isRiverineLocation(lat: number, lon: number): boolean {
 
 export const Route = createFileRoute('/explore')({
   validateSearch: exploreSearchSchema,
-  loaderDeps: ({ search }) => ({ search }),
-  loader: async ({ deps: { search } }) => {
-    // 📍 If we have coordinates, fetch weather data
-    if (search.lat && search.lon) {
-      const today = new Date()
-      const startDate = new Date(today)
-      startDate.setDate(startDate.getDate() - 7) // Last 7 days
 
-      const isCoastal = isCoastalLocation(search.lat, search.lon)
-      const isRiverine = isRiverineLocation(search.lat, search.lon)
-
-      try {
-        // Base data fetches
-        const basePromises = [
-          getHistoricalWeather({
-            data: {
-              latitude: search.lat,
-              longitude: search.lon,
-              start_date: formatDate(startDate),
-              end_date: formatDate(today),
-              daily: [
-                'temperature_2m_max',
-                'temperature_2m_min',
-                'temperature_2m_mean',
-                'precipitation_sum',
-                'wind_speed_10m_max',
-              ] as HistoricalDailyWeatherVariable[],
-              timezone: 'auto',
-            },
-          }),
-          getWeatherForecast({
-            data: {
-              latitude: search.lat,
-              longitude: search.lon,
-              daily: [
-                'temperature_2m_max',
-                'temperature_2m_min',
-                'weather_code',
-                'precipitation_sum',
-              ],
-              timezone: 'auto',
-            },
-          }),
-          getAirQuality({
-            data: {
-              latitude: search.lat,
-              longitude: search.lon,
-              current: [
-                'european_aqi',
-                'pm2_5',
-                'pm10',
-                'nitrogen_dioxide',
-                'ozone',
-              ],
-            },
-          }),
-        ]
-
-        // Contextual data fetches
-        const marinePromise = isCoastal
-          ? getMarineWeather({
-              data: {
-                latitude: search.lat,
-                longitude: search.lon,
-                hourly: [
-                  'wave_height',
-                  'wave_period',
-                  'wave_direction',
-                  'ocean_current_velocity',
-                  'ocean_current_direction',
-                ],
-                daily: ['wave_height_max', 'wave_period_max'],
-              },
-            }).catch(() => null)
-          : Promise.resolve(null)
-
-        const floodPromise = isRiverine
-          ? getFloodData({
-              data: {
-                latitude: search.lat,
-                longitude: search.lon,
-                daily: [
-                  'river_discharge',
-                  'river_discharge_max',
-                  'river_discharge_mean',
-                ],
-              },
-            }).catch(() => null)
-          : Promise.resolve(null)
-
-        const [historical, forecast, airQuality, marine, flood] =
-          await Promise.all([...basePromises, marinePromise, floodPromise])
-
-        return {
-          location: search.q,
-          coordinates: { lat: search.lat, lon: search.lon },
-          historical,
-          forecast,
-          airQuality,
-          marine,
-          flood,
-          isCoastal,
-          isRiverine,
-        }
-      } catch {
-        return {
-          location: search.q,
-          coordinates: { lat: search.lat, lon: search.lon },
-          historical: null,
-          forecast: null,
-          airQuality: null,
-          marine: null,
-          flood: null,
-          isCoastal,
-          isRiverine,
-        }
-      }
-    }
-
+  // 🔄 Loader to make search params available in head
+  loader: ({ location }) => {
+    const searchParams = new URLSearchParams(location.search)
     return {
-      location: null,
-      coordinates: null,
-      historical: null,
-      forecast: null,
-      airQuality: null,
-      marine: null,
-      flood: null,
-      isCoastal: false,
-      isRiverine: false,
+      location: searchParams.get('q') || null,
     }
   },
 
@@ -227,163 +116,190 @@ export const Route = createFileRoute('/explore')({
 })
 
 function ExplorePage() {
-  const {
-    location,
-    coordinates,
-    historical,
-    forecast,
-    airQuality,
-    marine,
-    flood,
-    isCoastal,
-    isRiverine,
-  } = Route.useLoaderData()
+  const { q: location, lat, lon } = Route.useSearch()
+  const navigate = useNavigate()
   const mapRef = useRef<MapCanvasHandle>(null)
-  const [selectedLocation, setSelectedLocation] = useState(coordinates)
 
-  // 🎯 Handle map location selection
-  const handleLocationSelect = useCallback(
-    (loc: { lng: number; lat: number }) => {
-      setSelectedLocation({ lat: loc.lat, lon: loc.lng })
-    },
-    [],
-  )
+  // 🌍 Get regional default based on user's timezone
+  const defaultLocation = useMemo(() => getDefaultLocation(), [])
 
-  // 📊 Prepare weather data (ensure numeric types)
-  const currentWeather = historical?.daily
-    ? {
-        temperature: Number(historical.daily.temperature_2m_mean?.[0] ?? 0),
-        apparentTemperature:
-          historical.daily.temperature_2m_max?.[0] !== undefined
-            ? Number(historical.daily.temperature_2m_max[0])
-            : undefined,
-        humidity: undefined,
-        windSpeed:
-          historical.daily.wind_speed_10m_max?.[0] !== undefined
-            ? Number(historical.daily.wind_speed_10m_max[0])
-            : undefined,
-        precipitation:
-          historical.daily.precipitation_sum?.[0] !== undefined
-            ? Number(historical.daily.precipitation_sum[0])
-            : undefined,
-      }
-    : undefined
+  // 📍 Use URL params if provided, otherwise use regional default
+  const hasUrlParams = lat !== undefined && lon !== undefined
+  const effectiveLat = hasUrlParams ? lat : defaultLocation.lat
+  const effectiveLon = hasUrlParams ? lon : defaultLocation.lon
+  const effectiveLocation = hasUrlParams
+    ? location
+    : `${defaultLocation.name}, ${defaultLocation.country}`
 
-  const forecastData = forecast?.daily?.time?.map((date, i) => ({
-    date: String(date),
-    tempMax: Number(forecast.daily?.temperature_2m_max?.[i] ?? 0),
-    tempMin: Number(forecast.daily?.temperature_2m_min?.[i] ?? 0),
-    weatherCode:
-      forecast.daily?.weather_code?.[i] !== undefined
-        ? Number(forecast.daily.weather_code[i])
-        : undefined,
-    precipitation:
-      forecast.daily?.precipitation_sum?.[i] !== undefined
-        ? Number(forecast.daily.precipitation_sum[i])
-        : undefined,
-  }))
+  // 📍 Selected location state (used for marker display)
+  const [selectedLocation, setSelectedLocation] = useState<{
+    lat: number
+    lon: number
+  } | null>(hasUrlParams ? { lat, lon } : null)
 
-  const airQualityData = airQuality?.current
-    ? {
-        aqi: Number(airQuality.current.european_aqi ?? 0),
-        pm25:
-          airQuality.current.pm2_5 !== undefined
-            ? Number(airQuality.current.pm2_5)
-            : undefined,
-        pm10:
-          airQuality.current.pm10 !== undefined
-            ? Number(airQuality.current.pm10)
-            : undefined,
-        no2:
-          airQuality.current.nitrogen_dioxide !== undefined
-            ? Number(airQuality.current.nitrogen_dioxide)
-            : undefined,
-        o3:
-          airQuality.current.ozone !== undefined
-            ? Number(airQuality.current.ozone)
-            : undefined,
-      }
-    : undefined
+  // 🔄 Initialize with default on client-side mount
+  useEffect(() => {
+    if (!hasUrlParams && selectedLocation === null) {
+      setSelectedLocation({
+        lat: defaultLocation.lat,
+        lon: defaultLocation.lon,
+      })
+    }
+  }, [hasUrlParams, selectedLocation, defaultLocation])
 
-  // 🌊 Marine data
-  const marineData = marine?.hourly
-    ? {
-        waveHeight:
-          marine.hourly.wave_height?.[0] !== undefined
-            ? Number(marine.hourly.wave_height[0])
-            : undefined,
-        wavePeriod:
-          marine.hourly.wave_period?.[0] !== undefined
-            ? Number(marine.hourly.wave_period[0])
-            : undefined,
-        waveDirection:
-          marine.hourly.wave_direction?.[0] !== undefined
-            ? Number(marine.hourly.wave_direction[0])
-            : undefined,
-        currentSpeed:
-          marine.hourly.ocean_current_velocity?.[0] !== undefined
-            ? Number(marine.hourly.ocean_current_velocity[0])
-            : undefined,
-        currentDirection:
-          marine.hourly.ocean_current_direction?.[0] !== undefined
-            ? Number(marine.hourly.ocean_current_direction[0])
-            : undefined,
-      }
-    : undefined
+  // 🌊 Determine location type for contextual data
+  const isCoastal = isCoastalLocation(effectiveLat, effectiveLon)
+  const isRiverine = isRiverineLocation(effectiveLat, effectiveLon)
 
-  // 🌊 Flood data
-  const floodData = flood?.daily
-    ? {
-        riverDischarge:
-          flood.daily.river_discharge?.[0] !== undefined
-            ? Number(flood.daily.river_discharge[0])
-            : undefined,
-        riverDischargeMax:
-          flood.daily.river_discharge_max?.[0] !== undefined
-            ? Number(flood.daily.river_discharge_max[0])
-            : undefined,
-        riverDischargeMean:
-          flood.daily.river_discharge_mean?.[0] !== undefined
-            ? Number(flood.daily.river_discharge_mean[0])
-            : undefined,
-      }
-    : undefined
+  // 📅 Date range for historical data (last 7 days)
+  const { startDate, endDate } = useMemo(() => {
+    const today = new Date()
+    const start = new Date(today)
+    start.setDate(start.getDate() - 7)
+    return {
+      startDate: formatDate(start),
+      endDate: formatDate(today),
+    }
+  }, [])
 
-  // 📊 Calculate stats from historical data
-  const chartData = historical?.daily
-    ? transformWeatherData(historical, [
+  // 🔄 TanStack Query hooks with caching
+  // Always enabled now since we have default location
+  const { data: historical, isLoading: historicalLoading } =
+    useHistoricalWeather({
+      latitude: effectiveLat,
+      longitude: effectiveLon,
+      startDate,
+      endDate,
+      variables: [
         'temperature_2m_max',
         'temperature_2m_min',
         'temperature_2m_mean',
         'precipitation_sum',
         'wind_speed_10m_max',
-      ])
-    : []
-  const stats =
-    chartData.length > 0
-      ? calculateStats(chartData, 'temperature_2m_mean')
-      : null
+      ] as HistoricalDailyWeatherVariable[],
+      enabled: true, // Always fetch - we have default location
+    })
+
+  const { data: forecast, isLoading: forecastLoading } = useForecast({
+    latitude: effectiveLat,
+    longitude: effectiveLon,
+    enabled: true,
+  })
+
+  const { data: airQuality, isLoading: airQualityLoading } = useAirQuality({
+    latitude: effectiveLat,
+    longitude: effectiveLon,
+    enabled: true,
+  })
+
+  const { data: marine, isLoading: marineLoading } = useMarineWeather({
+    latitude: effectiveLat,
+    longitude: effectiveLon,
+    enabled: isCoastal,
+  })
+
+  const { data: flood, isLoading: floodLoading } = useFloodData({
+    latitude: effectiveLat,
+    longitude: effectiveLon,
+    enabled: isRiverine,
+  })
+
+  // 🎯 Handle map location selection - navigate to update URL
+  const handleLocationSelect = useCallback(
+    (loc: { lng: number; lat: number }) => {
+      setSelectedLocation({ lat: loc.lat, lon: loc.lng })
+      navigate({
+        to: '/explore',
+        search: { lat: loc.lat, lon: loc.lng },
+      })
+    },
+    [navigate],
+  )
+
+  // 📊 Prepare weather data (ensure numeric types)
+  const currentWeather = useMemo(() => {
+    if (!historical?.daily) return undefined
+    return {
+      temperature: Number(historical.daily.temperature_2m_mean?.[0] ?? 0),
+      apparentTemperature:
+        historical.daily.temperature_2m_max?.[0] !== undefined
+          ? Number(historical.daily.temperature_2m_max[0])
+          : undefined,
+      humidity: undefined,
+      windSpeed:
+        historical.daily.wind_speed_10m_max?.[0] !== undefined
+          ? Number(historical.daily.wind_speed_10m_max[0])
+          : undefined,
+      precipitation:
+        historical.daily.precipitation_sum?.[0] !== undefined
+          ? Number(historical.daily.precipitation_sum[0])
+          : undefined,
+    }
+  }, [historical])
+
+  const forecastData = useMemo(() => {
+    return forecast?.daily?.time?.map((date, i) => ({
+      date: String(date),
+      tempMax: Number(forecast.daily?.temperature_2m_max?.[i] ?? 0),
+      tempMin: Number(forecast.daily?.temperature_2m_min?.[i] ?? 0),
+      weatherCode:
+        forecast.daily?.weather_code?.[i] !== undefined
+          ? Number(forecast.daily.weather_code[i])
+          : undefined,
+      precipitation:
+        forecast.daily?.precipitation_sum?.[i] !== undefined
+          ? Number(forecast.daily.precipitation_sum[i])
+          : undefined,
+    }))
+  }, [forecast])
+
+  // 💨 Air quality data (extracted via helper)
+  const airQualityData = useMemo(
+    () => extractAirQualityData(airQuality?.current),
+    [airQuality],
+  )
+
+  // 🌊 Marine data (extracted via helper)
+  const marineData = useMemo(() => extractMarineData(marine?.hourly), [marine])
+
+  // 🌊 Flood data (extracted via helper)
+  const floodData = useMemo(() => extractFloodData(flood?.daily), [flood])
+
+  // 📊 Calculate stats from historical data
+  const stats = useMemo(() => {
+    const data = historical?.daily
+      ? transformWeatherData(historical, [
+          'temperature_2m_max',
+          'temperature_2m_min',
+          'temperature_2m_mean',
+          'precipitation_sum',
+          'wind_speed_10m_max',
+        ])
+      : []
+    return data.length > 0 ? calculateStats(data, 'temperature_2m_mean') : null
+  }, [historical])
 
   return (
     <div className="relative h-full w-full">
       {/* 🗺️ Map canvas (full-screen background) */}
-      <MapCanvas
+      <LazyMapCanvas
         ref={mapRef}
-        center={coordinates ? [coordinates.lon, coordinates.lat] : undefined}
-        zoom={coordinates ? 10 : 4}
+        center={[effectiveLon, effectiveLat]}
+        zoom={hasUrlParams ? 10 : 6}
         onLocationSelect={handleLocationSelect}
       >
-        {/* 📍 Selected location marker */}
-        {selectedLocation && (
-          <MapMarker
-            longitude={selectedLocation.lon}
-            latitude={selectedLocation.lat}
-            label={location ?? undefined}
-            variant="selected"
-            size="lg"
-          />
-        )}
-      </MapCanvas>
+        {/* 📍 Location marker */}
+        <MapMarker
+          longitude={effectiveLon}
+          latitude={effectiveLat}
+          label={effectiveLocation ?? undefined}
+          variant="selected"
+          size="lg"
+        />
+      </LazyMapCanvas>
+
+      {/* 📍 Floating geolocation button */}
+      <LocationButton />
 
       {/* 📊 Bento panel overlay */}
       <motion.div
@@ -392,96 +308,74 @@ function ExplorePage() {
         transition={{ delay: 0.3, duration: 0.4 }}
         className="absolute bottom-4 left-4 right-4 z-10"
       >
-        {coordinates ? (
-          <BentoGrid columns={12} gap="md" className="max-w-7xl mx-auto">
-            {/* 🌡️ Current weather */}
-            <WeatherPanel
-              location={location ?? 'Selected Location'}
-              data={currentWeather}
-              isLoading={!historical}
-              colSpan={3}
-              animationDelay={0}
-            />
+        <BentoGrid columns={12} gap="md" className="max-w-7xl mx-auto">
+          {/* 🌡️ Current weather */}
+          <WeatherPanel
+            location={effectiveLocation ?? 'Loading...'}
+            data={currentWeather}
+            isLoading={historicalLoading}
+            colSpan={3}
+            animationDelay={0}
+          />
 
-            {/* 🌬️ Air quality */}
-            <AirQualityPanel
-              data={airQualityData}
-              isLoading={!airQuality}
-              colSpan={3}
-              animationDelay={1}
-            />
+          {/* 🌬️ Air quality */}
+          <AirQualityPanel
+            data={airQualityData ?? undefined}
+            isLoading={airQualityLoading}
+            colSpan={3}
+            animationDelay={1}
+          />
 
-            {/* 📅 Forecast */}
-            <ForecastPanel
-              data={forecastData}
-              isLoading={!forecast}
-              colSpan="half"
-              animationDelay={2}
-            />
+          {/* 📅 Forecast */}
+          <ForecastPanel
+            data={forecastData}
+            isLoading={forecastLoading}
+            colSpan="half"
+            animationDelay={2}
+          />
 
-            {/* 📊 Stats */}
-            {stats && (
-              <StatsPanel
-                title="7-Day Summary"
-                stats={[
-                  {
-                    label: 'Avg Temp',
-                    value: stats.avg.toFixed(1),
-                    unit: '°C',
-                  },
-                  { label: 'Max', value: stats.max.toFixed(1), unit: '°C' },
-                  { label: 'Min', value: stats.min.toFixed(1), unit: '°C' },
-                  {
-                    label: 'Range',
-                    value: (stats.max - stats.min).toFixed(1),
-                    unit: '°C',
-                  },
-                ]}
-                colSpan={isCoastal || isRiverine ? 3 : 4}
-                columns={isCoastal || isRiverine ? 2 : 4}
-                animationDelay={3}
-              />
-            )}
-
-            {/* 🌊 Marine panel (coastal locations only) */}
-            <MarinePanel
-              data={marineData}
-              isLoading={!marine && isCoastal}
-              visible={isCoastal}
-              colSpan={3}
-              animationDelay={4}
+          {/* 📊 Stats */}
+          {stats && (
+            <StatsPanel
+              title="7-Day Summary"
+              stats={[
+                {
+                  label: 'Avg Temp',
+                  value: stats.avg.toFixed(1),
+                  unit: '°C',
+                },
+                { label: 'Max', value: stats.max.toFixed(1), unit: '°C' },
+                { label: 'Min', value: stats.min.toFixed(1), unit: '°C' },
+                {
+                  label: 'Range',
+                  value: (stats.max - stats.min).toFixed(1),
+                  unit: '°C',
+                },
+              ]}
+              colSpan={isCoastal || isRiverine ? 3 : 4}
+              columns={isCoastal || isRiverine ? 2 : 4}
+              animationDelay={3}
             />
+          )}
 
-            {/* 🌊 Flood panel (riverine locations only) */}
-            <FloodPanel
-              data={floodData}
-              isLoading={!flood && isRiverine}
-              visible={isRiverine}
-              colSpan={3}
-              animationDelay={5}
-            />
-          </BentoGrid>
-        ) : (
-          // 🏠 Empty state
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="glass rounded-3xl p-8 max-w-md mx-auto text-center"
-          >
-            <div className="text-5xl mb-4">🌍</div>
-            <h2 className="font-display text-2xl font-bold mb-2">
-              Explore Weather Data
-            </h2>
-            <p className="text-muted-foreground mb-4">
-              Search for a city or click anywhere on the map to explore weather
-              patterns and climate data.
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Press <kbd className="px-2 py-1 bg-muted rounded text-xs">⌘K</kbd>{' '}
-              to search
-            </p>
-          </motion.div>
-        )}
+          {/* 🌊 Marine panel (coastal locations only) */}
+          <MarinePanel
+            data={marineData ?? undefined}
+            isLoading={marineLoading}
+            visible={isCoastal}
+            colSpan={3}
+            animationDelay={4}
+          />
+
+          {/* 🌊 Flood panel (riverine locations only) */}
+          <FloodPanel
+            data={floodData ?? undefined}
+            isLoading={floodLoading}
+            visible={isRiverine}
+            colSpan={3}
+            animationDelay={5}
+          />
+        </BentoGrid>
       </motion.div>
     </div>
   )

@@ -4,6 +4,8 @@
  */
 
 import { TanStackDevtools } from '@tanstack/react-devtools'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import {
   createRootRoute,
   HeadContent,
@@ -17,8 +19,12 @@ import { type ReactNode, useState } from 'react'
 import { FloatingNav } from '@/components/navigation'
 import { LocationSearchOverlay } from '@/components/search'
 import { Toaster } from '@/components/ui/sonner'
+import { createQueryClient } from '@/lib/query-client'
 
 import appCss from '../styles.css?url'
+
+// ⚡ Create query client instance (singleton per render)
+const queryClient = createQueryClient()
 
 // 🌐 Site configuration
 const siteConfig = {
@@ -84,13 +90,50 @@ export const Route = createRootRoute({
       { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
       { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
 
-      // 🔄 Preconnect to API
-      { rel: 'preconnect', href: 'https://api.open-meteo.com' },
-      { rel: 'preconnect', href: 'https://archive-api.open-meteo.com' },
-      { rel: 'preconnect', href: 'https://geocoding-api.open-meteo.com' },
+      // 🔄 Preconnect to API (with crossorigin for CORS)
+      {
+        rel: 'preconnect',
+        href: 'https://api.open-meteo.com',
+        crossOrigin: 'anonymous',
+      },
+      {
+        rel: 'preconnect',
+        href: 'https://archive-api.open-meteo.com',
+        crossOrigin: 'anonymous',
+      },
+      {
+        rel: 'preconnect',
+        href: 'https://geocoding-api.open-meteo.com',
+        crossOrigin: 'anonymous',
+      },
+      {
+        rel: 'preconnect',
+        href: 'https://air-quality-api.open-meteo.com',
+        crossOrigin: 'anonymous',
+      },
+      {
+        rel: 'preconnect',
+        href: 'https://marine-api.open-meteo.com',
+        crossOrigin: 'anonymous',
+      },
+      {
+        rel: 'preconnect',
+        href: 'https://flood-api.open-meteo.com',
+        crossOrigin: 'anonymous',
+      },
+
+      // 🌐 DNS Prefetch (fallback for browsers that don't support preconnect)
+      { rel: 'dns-prefetch', href: 'https://api.open-meteo.com' },
+      { rel: 'dns-prefetch', href: 'https://archive-api.open-meteo.com' },
+      { rel: 'dns-prefetch', href: 'https://geocoding-api.open-meteo.com' },
+      { rel: 'dns-prefetch', href: 'https://tiles.openfreemap.org' },
 
       // 🗺️ Preconnect to map tiles
-      { rel: 'preconnect', href: 'https://tiles.openfreemap.org' },
+      {
+        rel: 'preconnect',
+        href: 'https://tiles.openfreemap.org',
+        crossOrigin: 'anonymous',
+      },
     ],
     scripts: [
       // 📊 JSON-LD Structured Data
@@ -152,29 +195,37 @@ function RootComponent() {
   const [searchOpen, setSearchOpen] = useState(false)
 
   return (
-    <ThemeProvider
-      attribute="class"
-      defaultTheme="system"
-      enableSystem
-      disableTransitionOnChange
-    >
-      {/* 🗺️ Full-screen spatial canvas */}
-      <div className="relative h-screen w-screen">
-        {/* 🧭 Floating navigation */}
-        <FloatingNav
-          onSearchOpen={() => setSearchOpen(true)}
-          onLayerToggle={(_layerId, _enabled) => {}}
-        />
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider
+        attribute="class"
+        defaultTheme="system"
+        enableSystem
+        disableTransitionOnChange
+      >
+        {/* 🗺️ Full-screen spatial canvas */}
+        <div className="relative h-screen w-screen">
+          {/* 🧭 Floating navigation */}
+          <FloatingNav
+            onSearchOpen={() => setSearchOpen(true)}
+            onLayerToggle={(_layerId, _enabled) => {}}
+          />
 
-        {/* 📄 Route content */}
-        <Outlet />
+          {/* 📄 Route content */}
+          <Outlet />
 
-        {/* 🔍 Search overlay */}
-        <LocationSearchOverlay open={searchOpen} onOpenChange={setSearchOpen} />
+          {/* 🔍 Search overlay */}
+          <LocationSearchOverlay
+            open={searchOpen}
+            onOpenChange={setSearchOpen}
+          />
 
-        {/* 🔔 Toast notifications */}
-        <Toaster />
-      </div>
-    </ThemeProvider>
+          {/* 🔔 Toast notifications */}
+          <Toaster />
+        </div>
+      </ThemeProvider>
+
+      {/* 🔧 React Query DevTools (dev only) */}
+      <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />
+    </QueryClientProvider>
   )
 }

@@ -1,11 +1,14 @@
 /**
  * 📊 StatsPanel Component
  * Displays key statistics in a compact format
+ *
+ * 🚀 Performance: Wrapped in React.memo for render optimization
  */
 'use client'
 
 import { BarChart3, Minus, TrendingDown, TrendingUp } from 'lucide-react'
 import type * as React from 'react'
+import { memo } from 'react'
 
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
@@ -56,7 +59,7 @@ function getTrendColor(change?: number) {
   return 'text-muted-foreground'
 }
 
-export function StatsPanel({
+export const StatsPanel = memo(function StatsPanel({
   title = 'Statistics',
   stats,
   isLoading = false,
@@ -141,4 +144,4 @@ export function StatsPanel({
       </BentoPanelContent>
     </BentoPanel>
   )
-}
+})
