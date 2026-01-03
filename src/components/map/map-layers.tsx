@@ -324,6 +324,8 @@ export function AlertsLayer({ visible }: AlertsLayerProps) {
 /**
  * 📍 Layer Legend
  * Shows legend for active layers
+ *
+ * 🌧️ Precipitation radar legend uses RainViewer color scale
  */
 interface LayerLegendProps {
   activeLayer:
@@ -340,6 +342,7 @@ const legendConfigs = {
   temperature: {
     title: 'Temperature',
     unit: '°C',
+    available: false,
     stops: [
       { value: -20, color: '#1565c0', label: '-20°' },
       { value: 0, color: '#42a5f5', label: '0°' },
@@ -348,18 +351,22 @@ const legendConfigs = {
     ],
   },
   precipitation: {
-    title: 'Precipitation',
-    unit: 'mm',
+    title: 'Precipitation Radar',
+    unit: '',
+    available: true,
+    source: 'RainViewer',
     stops: [
-      { value: 0, color: '#e3f2fd', label: '0' },
-      { value: 10, color: '#42a5f5', label: '10' },
-      { value: 50, color: '#1565c0', label: '50' },
-      { value: 100, color: '#0d47a1', label: '100+' },
+      { value: 0, color: '#88D0F3', label: 'Light' },
+      { value: 1, color: '#3498DB', label: 'Moderate' },
+      { value: 2, color: '#27AE60', label: 'Heavy' },
+      { value: 3, color: '#F1C40F', label: 'Intense' },
+      { value: 4, color: '#E74C3C', label: 'Extreme' },
     ],
   },
   clouds: {
     title: 'Cloud Cover',
     unit: '%',
+    available: false,
     stops: [
       { value: 0, color: 'rgba(255, 255, 255, 0.5)', label: '0' },
       { value: 50, color: 'rgba(160, 165, 180, 0.7)', label: '50' },
@@ -369,6 +376,7 @@ const legendConfigs = {
   wind: {
     title: 'Wind Speed',
     unit: 'km/h',
+    available: false,
     stops: [
       { value: 0, color: '#b3e5fc', label: '0' },
       { value: 25, color: '#00bcd4', label: '25' },
@@ -379,6 +387,7 @@ const legendConfigs = {
   marine: {
     title: 'Wave Height',
     unit: 'm',
+    available: false,
     stops: [
       { value: 0, color: '#4dd0e1', label: '0' },
       { value: 2, color: '#0097a7', label: '2' },
@@ -389,6 +398,7 @@ const legendConfigs = {
   alerts: {
     title: 'Alert Level',
     unit: '',
+    available: false,
     stops: [
       { value: 1, color: '#43a047', label: 'Minor' },
       { value: 2, color: '#fbc02d', label: 'Moderate' },
@@ -402,10 +412,10 @@ export function LayerLegend({ activeLayer }: LayerLegendProps) {
   if (!activeLayer) return null
 
   const config = legendConfigs[activeLayer]
-  if (!config) return null
+  if (!config || !config.available) return null
 
   return (
-    <div className="glass rounded-xl p-3 min-w-[120px]">
+    <div className="glass rounded-xl p-3 min-w-[140px]">
       <p className="text-xs font-medium mb-2">{config.title}</p>
       <div className="space-y-1">
         {config.stops.map((stop, i) => (
@@ -421,6 +431,11 @@ export function LayerLegend({ activeLayer }: LayerLegendProps) {
           </div>
         ))}
       </div>
+      {'source' in config && config.source && (
+        <p className="text-[10px] text-muted-foreground/60 mt-2 pt-2 border-t border-border/30">
+          Source: {config.source}
+        </p>
+      )}
     </div>
   )
 }

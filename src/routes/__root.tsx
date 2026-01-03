@@ -19,6 +19,7 @@ import { type ReactNode, useState } from 'react'
 import { FloatingNav } from '@/components/navigation'
 import { LocationSearchOverlay } from '@/components/search'
 import { Toaster } from '@/components/ui/sonner'
+import { LayerProvider } from '@/contexts'
 import { createQueryClient } from '@/lib/query-client'
 
 import appCss from '../styles.css?url'
@@ -202,26 +203,25 @@ function RootComponent() {
         enableSystem
         disableTransitionOnChange
       >
-        {/* 🗺️ Full-screen spatial canvas */}
-        <div className="relative h-screen w-screen">
-          {/* 🧭 Floating navigation */}
-          <FloatingNav
-            onSearchOpen={() => setSearchOpen(true)}
-            onLayerToggle={(_layerId, _enabled) => {}}
-          />
+        <LayerProvider>
+          {/* 🗺️ Full-screen spatial canvas */}
+          <div className="relative h-screen w-screen">
+            {/* 🧭 Floating navigation */}
+            <FloatingNav onSearchOpen={() => setSearchOpen(true)} />
 
-          {/* 📄 Route content */}
-          <Outlet />
+            {/* 📄 Route content */}
+            <Outlet />
 
-          {/* 🔍 Search overlay */}
-          <LocationSearchOverlay
-            open={searchOpen}
-            onOpenChange={setSearchOpen}
-          />
+            {/* 🔍 Search overlay */}
+            <LocationSearchOverlay
+              open={searchOpen}
+              onOpenChange={setSearchOpen}
+            />
 
-          {/* 🔔 Toast notifications */}
-          <Toaster />
-        </div>
+            {/* 🔔 Toast notifications */}
+            <Toaster />
+          </div>
+        </LayerProvider>
       </ThemeProvider>
 
       {/* 🔧 React Query DevTools (dev only) */}

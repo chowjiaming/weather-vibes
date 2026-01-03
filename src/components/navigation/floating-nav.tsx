@@ -18,17 +18,11 @@ import { SearchTrigger } from './search-trigger'
 interface FloatingNavProps {
   /** 🔍 Callback when search is triggered */
   onSearchOpen?: () => void
-  /** 📚 Callback when layer is toggled */
-  onLayerToggle?: (layerId: string, enabled: boolean) => void
   /** 🎨 Additional class names */
   className?: string
 }
 
-export function FloatingNav({
-  onSearchOpen,
-  onLayerToggle,
-  className,
-}: FloatingNavProps) {
+export function FloatingNav({ onSearchOpen, className }: FloatingNavProps) {
   const { isDark, toggleTheme } = useAdaptiveTheme()
 
   return (
@@ -49,7 +43,7 @@ export function FloatingNav({
       <ModePill />
 
       {/* 📚 Layer drawer */}
-      <LayerDrawer onLayerToggle={onLayerToggle} />
+      <LayerDrawer />
 
       {/* 🌙 Theme toggle */}
       <Button

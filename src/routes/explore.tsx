@@ -14,6 +14,7 @@ import { z } from 'zod'
 
 import type { HistoricalDailyWeatherVariable } from '@/api/types'
 import {
+  LayerLegend,
   LazyMapCanvas,
   LocationButton,
   type MapCanvasHandle,
@@ -28,6 +29,7 @@ import {
   WeatherPanel,
 } from '@/components/panels'
 import { Button } from '@/components/ui/button'
+import { useLayers } from '@/contexts'
 import {
   extractAirQualityData,
   extractFloodData,
@@ -120,6 +122,9 @@ function ExplorePage() {
   const { q: location, lat, lon } = Route.useSearch()
   const navigate = useNavigate()
   const mapRef = useRef<MapCanvasHandle>(null)
+
+  // 🗺️ Layer visibility state
+  const { activeLayer } = useLayers()
 
   // 📊 Panel visibility state
   const [showPanels, setShowPanels] = useState(true)
@@ -304,6 +309,13 @@ function ExplorePage() {
 
       {/* 📍 Floating geolocation button */}
       <LocationButton />
+
+      {/* 📊 Layer legend (shows when a layer is active) */}
+      {activeLayer && (
+        <div className="fixed bottom-24 right-4 z-20">
+          <LayerLegend activeLayer={activeLayer} />
+        </div>
+      )}
 
       {/* 🔀 Panel toggle button */}
       <motion.div
