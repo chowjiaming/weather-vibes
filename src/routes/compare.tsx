@@ -3,6 +3,7 @@
  * Multi-location and historical year comparison
  *
  * 🔄 Performance: Uses TanStack Query for client-side caching
+ * 🌍 Default: Auto-detects user region via timezone
  */
 import { useQueries } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
@@ -34,6 +35,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { getDefaultLocation } from '@/lib/default-locations'
 import { CACHE_TIMES, weatherKeys } from '@/lib/query-client'
 
 // 🎨 Color palette for comparison lines
@@ -108,9 +110,21 @@ function ComparePage() {
   const navigate = useNavigate()
   const search = Route.useSearch()
 
-  // 📍 Parse locations from search params
+  // 🌍 Get regional default based on user's timezone
+  const defaultLocation = useMemo(() => getDefaultLocation(), [])
+
+  // 📍 Parse locations from search params, or use default
   const locations: CompareLocation[] = useMemo(() => {
-    if (!search.locations) return []
+    if (!search.locations) {
+      // 🏠 Use default location when none specified
+      return [
+        {
+          name: `${defaultLocation.name}, ${defaultLocation.country}`,
+          lat: defaultLocation.lat,
+          lon: defaultLocation.lon,
+        },
+      ]
+    }
     return search.locations
       .split(';')
       .map((loc) => {
@@ -118,7 +132,7 @@ function ComparePage() {
         return { name, lat: Number(lat), lon: Number(lon) }
       })
       .filter((l) => !Number.isNaN(l.lat) && !Number.isNaN(l.lon))
-  }, [search.locations])
+  }, [search.locations, defaultLocation])
 
   // 📅 Parse years from search params
   const parsedYears = useMemo(() => {
@@ -262,12 +276,15 @@ function ComparePage() {
     [navigate, search],
   )
 
+  // 📍 Determine if using explicit search params or default
+  const hasExplicitLocation = !!search.locations
+
   return (
     <div className="relative h-full w-full">
       {/* 🗺️ Map canvas (background) */}
       <LazyMapCanvas
-        center={locations[0] ? [locations[0].lon, locations[0].lat] : undefined}
-        zoom={locations.length > 0 ? 8 : 4}
+        center={[locations[0].lon, locations[0].lat]}
+        zoom={hasExplicitLocation ? 8 : 6}
         interactive={false}
         className="opacity-50"
       >
@@ -289,13 +306,19 @@ function ComparePage() {
         transition={{ delay: 0.2, duration: 0.4 }}
         className="absolute inset-4 top-20 z-10 flex items-start justify-center"
       >
-        {locations.length > 0 ? (
+        {/* 📊 Always show comparison panel (default location is always available) */}
+        {
           <div className="glass rounded-3xl p-6 max-w-5xl w-full max-h-[calc(100vh-8rem)] overflow-auto">
             {/* 🎛️ Controls */}
             <div className="flex flex-wrap items-center gap-4 mb-6">
               <div className="flex items-center gap-2">
                 <MapPin className="text-primary" size={20} />
                 <span className="font-medium">{locations[0].name}</span>
+                {!hasExplicitLocation && (
+                  <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                    Default
+                  </span>
+                )}
               </div>
 
               <div className="flex-1" />
@@ -386,27 +409,7 @@ function ComparePage() {
               </div>
             )}
           </div>
-        ) : (
-          // 🏠 Empty state
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="glass rounded-3xl p-8 max-w-md text-center"
-          >
-            <div className="text-5xl mb-4">📊</div>
-            <h2 className="font-display text-2xl font-bold mb-2">
-              Compare Weather Patterns
-            </h2>
-            <p className="text-muted-foreground mb-4">
-              Search for a location to compare weather patterns across different
-              years.
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Press <kbd className="px-2 py-1 bg-muted rounded text-xs">⌘K</kbd>{' '}
-              to search
-            </p>
-          </motion.div>
-        )}
+        }
       </motion.div>
     </div>
   )
