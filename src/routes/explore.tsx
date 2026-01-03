@@ -4,15 +4,17 @@
  * Includes contextual panels (marine, flood) based on location
  *
  * 🔄 Performance: Uses TanStack Query for client-side caching
+ * 🌍 Default: Auto-detects user region via timezone
  */
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { motion } from 'motion/react'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { z } from 'zod'
 
 import type { HistoricalDailyWeatherVariable } from '@/api/types'
 import {
   LazyMapCanvas,
+  LocationButton,
   type MapCanvasHandle,
   MapMarker,
 } from '@/components/map'
@@ -35,6 +37,7 @@ import {
   useHistoricalWeather,
   useMarineWeather,
 } from '@/hooks/queries'
+import { getDefaultLocation } from '@/lib/default-locations'
 import {
   calculateStats,
   formatDate,
@@ -117,13 +120,36 @@ function ExplorePage() {
   const navigate = useNavigate()
   const mapRef = useRef<MapCanvasHandle>(null)
 
-  // 📍 Derived state for coordinates
-  const coordinates = lat && lon ? { lat, lon } : null
-  const [selectedLocation, setSelectedLocation] = useState(coordinates)
+  // 🌍 Get regional default based on user's timezone
+  const defaultLocation = useMemo(() => getDefaultLocation(), [])
+
+  // 📍 Use URL params if provided, otherwise use regional default
+  const hasUrlParams = lat !== undefined && lon !== undefined
+  const effectiveLat = hasUrlParams ? lat : defaultLocation.lat
+  const effectiveLon = hasUrlParams ? lon : defaultLocation.lon
+  const effectiveLocation = hasUrlParams
+    ? location
+    : `${defaultLocation.name}, ${defaultLocation.country}`
+
+  // 📍 Selected location state (used for marker display)
+  const [selectedLocation, setSelectedLocation] = useState<{
+    lat: number
+    lon: number
+  } | null>(hasUrlParams ? { lat, lon } : null)
+
+  // 🔄 Initialize with default on client-side mount
+  useEffect(() => {
+    if (!hasUrlParams && selectedLocation === null) {
+      setSelectedLocation({
+        lat: defaultLocation.lat,
+        lon: defaultLocation.lon,
+      })
+    }
+  }, [hasUrlParams, selectedLocation, defaultLocation])
 
   // 🌊 Determine location type for contextual data
-  const isCoastal = lat && lon ? isCoastalLocation(lat, lon) : false
-  const isRiverine = lat && lon ? isRiverineLocation(lat, lon) : false
+  const isCoastal = isCoastalLocation(effectiveLat, effectiveLon)
+  const isRiverine = isRiverineLocation(effectiveLat, effectiveLon)
 
   // 📅 Date range for historical data (last 7 days)
   const { startDate, endDate } = useMemo(() => {
@@ -137,10 +163,11 @@ function ExplorePage() {
   }, [])
 
   // 🔄 TanStack Query hooks with caching
+  // Always enabled now since we have default location
   const { data: historical, isLoading: historicalLoading } =
     useHistoricalWeather({
-      latitude: lat ?? 0,
-      longitude: lon ?? 0,
+      latitude: effectiveLat,
+      longitude: effectiveLon,
       startDate,
       endDate,
       variables: [
@@ -150,31 +177,31 @@ function ExplorePage() {
         'precipitation_sum',
         'wind_speed_10m_max',
       ] as HistoricalDailyWeatherVariable[],
-      enabled: !!lat && !!lon,
+      enabled: true, // Always fetch - we have default location
     })
 
   const { data: forecast, isLoading: forecastLoading } = useForecast({
-    latitude: lat ?? 0,
-    longitude: lon ?? 0,
-    enabled: !!lat && !!lon,
+    latitude: effectiveLat,
+    longitude: effectiveLon,
+    enabled: true,
   })
 
   const { data: airQuality, isLoading: airQualityLoading } = useAirQuality({
-    latitude: lat ?? 0,
-    longitude: lon ?? 0,
-    enabled: !!lat && !!lon,
+    latitude: effectiveLat,
+    longitude: effectiveLon,
+    enabled: true,
   })
 
   const { data: marine, isLoading: marineLoading } = useMarineWeather({
-    latitude: lat ?? 0,
-    longitude: lon ?? 0,
-    enabled: !!lat && !!lon && isCoastal,
+    latitude: effectiveLat,
+    longitude: effectiveLon,
+    enabled: isCoastal,
   })
 
   const { data: flood, isLoading: floodLoading } = useFloodData({
-    latitude: lat ?? 0,
-    longitude: lon ?? 0,
-    enabled: !!lat && !!lon && isRiverine,
+    latitude: effectiveLat,
+    longitude: effectiveLon,
+    enabled: isRiverine,
   })
 
   // 🎯 Handle map location selection - navigate to update URL
@@ -257,21 +284,22 @@ function ExplorePage() {
       {/* 🗺️ Map canvas (full-screen background) */}
       <LazyMapCanvas
         ref={mapRef}
-        center={coordinates ? [coordinates.lon, coordinates.lat] : undefined}
-        zoom={coordinates ? 10 : 4}
+        center={[effectiveLon, effectiveLat]}
+        zoom={hasUrlParams ? 10 : 6}
         onLocationSelect={handleLocationSelect}
       >
-        {/* 📍 Selected location marker */}
-        {selectedLocation && (
-          <MapMarker
-            longitude={selectedLocation.lon}
-            latitude={selectedLocation.lat}
-            label={location ?? undefined}
-            variant="selected"
-            size="lg"
-          />
-        )}
+        {/* 📍 Location marker */}
+        <MapMarker
+          longitude={effectiveLon}
+          latitude={effectiveLat}
+          label={effectiveLocation ?? undefined}
+          variant="selected"
+          size="lg"
+        />
       </LazyMapCanvas>
+
+      {/* 📍 Floating geolocation button */}
+      <LocationButton />
 
       {/* 📊 Bento panel overlay */}
       <motion.div
@@ -280,96 +308,74 @@ function ExplorePage() {
         transition={{ delay: 0.3, duration: 0.4 }}
         className="absolute bottom-4 left-4 right-4 z-10"
       >
-        {coordinates ? (
-          <BentoGrid columns={12} gap="md" className="max-w-7xl mx-auto">
-            {/* 🌡️ Current weather */}
-            <WeatherPanel
-              location={location ?? 'Selected Location'}
-              data={currentWeather}
-              isLoading={historicalLoading}
-              colSpan={3}
-              animationDelay={0}
-            />
+        <BentoGrid columns={12} gap="md" className="max-w-7xl mx-auto">
+          {/* 🌡️ Current weather */}
+          <WeatherPanel
+            location={effectiveLocation ?? 'Loading...'}
+            data={currentWeather}
+            isLoading={historicalLoading}
+            colSpan={3}
+            animationDelay={0}
+          />
 
-            {/* 🌬️ Air quality */}
-            <AirQualityPanel
-              data={airQualityData ?? undefined}
-              isLoading={airQualityLoading}
-              colSpan={3}
-              animationDelay={1}
-            />
+          {/* 🌬️ Air quality */}
+          <AirQualityPanel
+            data={airQualityData ?? undefined}
+            isLoading={airQualityLoading}
+            colSpan={3}
+            animationDelay={1}
+          />
 
-            {/* 📅 Forecast */}
-            <ForecastPanel
-              data={forecastData}
-              isLoading={forecastLoading}
-              colSpan="half"
-              animationDelay={2}
-            />
+          {/* 📅 Forecast */}
+          <ForecastPanel
+            data={forecastData}
+            isLoading={forecastLoading}
+            colSpan="half"
+            animationDelay={2}
+          />
 
-            {/* 📊 Stats */}
-            {stats && (
-              <StatsPanel
-                title="7-Day Summary"
-                stats={[
-                  {
-                    label: 'Avg Temp',
-                    value: stats.avg.toFixed(1),
-                    unit: '°C',
-                  },
-                  { label: 'Max', value: stats.max.toFixed(1), unit: '°C' },
-                  { label: 'Min', value: stats.min.toFixed(1), unit: '°C' },
-                  {
-                    label: 'Range',
-                    value: (stats.max - stats.min).toFixed(1),
-                    unit: '°C',
-                  },
-                ]}
-                colSpan={isCoastal || isRiverine ? 3 : 4}
-                columns={isCoastal || isRiverine ? 2 : 4}
-                animationDelay={3}
-              />
-            )}
-
-            {/* 🌊 Marine panel (coastal locations only) */}
-            <MarinePanel
-              data={marineData ?? undefined}
-              isLoading={marineLoading}
-              visible={isCoastal}
-              colSpan={3}
-              animationDelay={4}
+          {/* 📊 Stats */}
+          {stats && (
+            <StatsPanel
+              title="7-Day Summary"
+              stats={[
+                {
+                  label: 'Avg Temp',
+                  value: stats.avg.toFixed(1),
+                  unit: '°C',
+                },
+                { label: 'Max', value: stats.max.toFixed(1), unit: '°C' },
+                { label: 'Min', value: stats.min.toFixed(1), unit: '°C' },
+                {
+                  label: 'Range',
+                  value: (stats.max - stats.min).toFixed(1),
+                  unit: '°C',
+                },
+              ]}
+              colSpan={isCoastal || isRiverine ? 3 : 4}
+              columns={isCoastal || isRiverine ? 2 : 4}
+              animationDelay={3}
             />
+          )}
 
-            {/* 🌊 Flood panel (riverine locations only) */}
-            <FloodPanel
-              data={floodData ?? undefined}
-              isLoading={floodLoading}
-              visible={isRiverine}
-              colSpan={3}
-              animationDelay={5}
-            />
-          </BentoGrid>
-        ) : (
-          // 🏠 Empty state
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="glass rounded-3xl p-8 max-w-md mx-auto text-center"
-          >
-            <div className="text-5xl mb-4">🌍</div>
-            <h2 className="font-display text-2xl font-bold mb-2">
-              Explore Weather Data
-            </h2>
-            <p className="text-muted-foreground mb-4">
-              Search for a city or click anywhere on the map to explore weather
-              patterns and climate data.
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Press <kbd className="px-2 py-1 bg-muted rounded text-xs">⌘K</kbd>{' '}
-              to search
-            </p>
-          </motion.div>
-        )}
+          {/* 🌊 Marine panel (coastal locations only) */}
+          <MarinePanel
+            data={marineData ?? undefined}
+            isLoading={marineLoading}
+            visible={isCoastal}
+            colSpan={3}
+            animationDelay={4}
+          />
+
+          {/* 🌊 Flood panel (riverine locations only) */}
+          <FloodPanel
+            data={floodData ?? undefined}
+            isLoading={floodLoading}
+            visible={isRiverine}
+            colSpan={3}
+            animationDelay={5}
+          />
+        </BentoGrid>
       </motion.div>
     </div>
   )
