@@ -175,14 +175,20 @@ function ComparePage() {
     })),
   })
 
+  // 📊 Check loading state properly
+  const isLoading = yearQueries.some((q) => q.isLoading || q.isPending)
+  const hasAllData = yearQueries.every((q) => q.data !== undefined)
+
   // 📊 Combine query results
   const data = useMemo(() => {
-    if (yearQueries.some((q) => !q.data)) return null
+    // ✅ Only return null if still loading
+    if (isLoading || !hasAllData) return null
+
     return selectedYears.map((year, i) => ({
       year,
       response: yearQueries[i].data,
     }))
-  }, [yearQueries, selectedYears]) as Array<{
+  }, [yearQueries, selectedYears, isLoading, hasAllData]) as Array<{
     year: number
     response: NonNullable<(typeof yearQueries)[number]['data']>
   }> | null
