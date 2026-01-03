@@ -159,65 +159,113 @@ export const getRecentHistoricalWeather = createServerFn({ method: 'GET' })
   })
 
 /**
- * Schema for year-over-year comparison
+ * Schema for year-over-year comparison (full year)
  */
 const yearOverYearSchema = coordinatesSchema.extend({
-  /** Start month-day (MM-DD format) */
-  startMonthDay: z.string().regex(/^\d{2}-\d{2}$/),
-  /** End month-day (MM-DD format) */
-  endMonthDay: z.string().regex(/^\d{2}-\d{2}$/),
   /** Years to compare */
   years: z.array(z.number().int().min(1940)),
-  /** Daily variables to fetch */
-  daily: z.array(z.string()).optional(),
+  /** Variable to compare */
+  variable: z.string().optional(),
+  /** Start month-day (MM-DD format), optional - defaults to full year */
+  startMonthDay: z
+    .string()
+    .regex(/^\d{2}-\d{2}$/)
+    .optional(),
+  /** End month-day (MM-DD format), optional - defaults to full year */
+  endMonthDay: z
+    .string()
+    .regex(/^\d{2}-\d{2}$/)
+    .optional(),
 })
 
 /**
- * Compare weather patterns for a date range across multiple years
- * Useful for seasonal pattern analysis
+ * 📊 Year comparison data point
+ */
+interface YearComparisonDataPoint {
+  dayOfYear: number
+  value: number | null
+}
+
+/**
+ * 📊 Year comparison result
+ */
+interface YearComparisonResult {
+  year: number
+  data: YearComparisonDataPoint[]
+}
+
+/**
+ * Compare weather patterns for a full year across multiple years
+ * Useful for climate trend analysis
  *
  * @example
  * ```ts
- * const summers = await getYearOverYearComparison({
+ * const comparison = await getYearOverYearComparison({
  *   data: {
  *     latitude: 48.8566,
  *     longitude: 2.3522,
- *     startMonthDay: '06-01',
- *     endMonthDay: '08-31',
- *     years: [2019, 2020, 2021, 2022, 2023],
- *     daily: ['temperature_2m_max', 'precipitation_sum'],
+ *     years: [2022, 2023, 2024],
+ *     variable: 'temperature_2m_mean',
  *   }
  * })
  * ```
  */
 export const getYearOverYearComparison = createServerFn({ method: 'GET' })
   .inputValidator(yearOverYearSchema)
-  .handler(
-    async ({ data }): Promise<{ year: number; weather: WeatherResponse }[]> => {
-      const results = await Promise.all(
-        data.years.map(async (year) => {
-          const startDate = `${year}-${data.startMonthDay}`
-          const endDate = `${year}-${data.endMonthDay}`
+  .handler(async ({ data }): Promise<YearComparisonResult[]> => {
+    const variable = data.variable || 'temperature_2m_mean'
+    const startMonth = data.startMonthDay || '01-01'
+    const endMonth = data.endMonthDay || '12-31'
 
-          const url = buildUrl(API_ENDPOINTS.historical, {
-            latitude: data.latitude,
-            longitude: data.longitude,
-            start_date: startDate,
-            end_date: endDate,
-            daily: data.daily ?? [
-              'temperature_2m_max',
-              'temperature_2m_min',
-              'precipitation_sum',
-              'weather_code',
-            ],
-            timezone: DEFAULT_TIMEZONE,
-          })
+    const results = await Promise.all(
+      data.years.map(async (year) => {
+        const currentYear = new Date().getFullYear()
+        // 📅 Adjust end date if current year and future date
+        let endDate = `${year}-${endMonth}`
+        if (year === currentYear) {
+          const today = new Date()
+          today.setDate(today.getDate() - 5) // Account for data delay
+          const todayStr = formatDate(today)
+          if (endDate > todayStr) {
+            endDate = todayStr
+          }
+        }
 
-          const weather = await fetchFromApi<WeatherResponse>(url)
-          return { year, weather }
-        }),
-      )
+        const url = buildUrl(API_ENDPOINTS.historical, {
+          latitude: data.latitude,
+          longitude: data.longitude,
+          start_date: `${year}-${startMonth}`,
+          end_date: endDate,
+          daily: [variable],
+          timezone: DEFAULT_TIMEZONE,
+        })
 
-      return results
-    },
-  )
+        const weather = await fetchFromApi<WeatherResponse>(url)
+
+        // 📊 Transform to day-of-year format
+        const dailyData: YearComparisonDataPoint[] = []
+        if (weather.daily?.time) {
+          const times = weather.daily.time as string[]
+          const values = (weather.daily as Record<string, unknown>)[
+            variable
+          ] as (number | null)[]
+
+          for (let i = 0; i < times.length; i++) {
+            const date = new Date(times[i])
+            const startOfYear = new Date(date.getFullYear(), 0, 0)
+            const diff = date.getTime() - startOfYear.getTime()
+            const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24))
+
+            dailyData.push({
+              dayOfYear,
+              value: values?.[i] ?? null,
+            })
+          }
+        }
+
+        return { year, data: dailyData }
+      }),
+    )
+
+    return results
+  })
