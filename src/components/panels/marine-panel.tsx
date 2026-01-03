@@ -1,10 +1,13 @@
 /**
  * 🌊 MarinePanel Component
  * Displays marine/ocean weather data for coastal locations
+ *
+ * 🚀 Performance: Wrapped in React.memo for render optimization
  */
 'use client'
 
 import { Anchor, Waves } from 'lucide-react'
+import { memo } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -51,7 +54,7 @@ function getDirectionLabel(degrees?: number): string {
   return directions[index]
 }
 
-export function MarinePanel({
+export const MarinePanel = memo(function MarinePanel({
   data,
   isLoading = false,
   visible = true,
@@ -167,4 +170,4 @@ export function MarinePanel({
       </BentoPanelContent>
     </BentoPanel>
   )
-}
+})

@@ -1,10 +1,13 @@
 /**
  * 🌊 FloodPanel Component
  * Displays flood risk and river discharge data
+ *
+ * 🚀 Performance: Wrapped in React.memo for render optimization
  */
 'use client'
 
 import { AlertTriangle, Droplets, TrendingUp, Waves } from 'lucide-react'
+import { memo } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -74,7 +77,7 @@ function calculateFloodRisk(
   return 'extreme'
 }
 
-export function FloodPanel({
+export const FloodPanel = memo(function FloodPanel({
   data,
   isLoading = false,
   visible = true,
@@ -211,4 +214,4 @@ export function FloodPanel({
       </BentoPanelContent>
     </BentoPanel>
   )
-}
+})

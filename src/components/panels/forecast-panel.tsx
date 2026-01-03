@@ -1,11 +1,14 @@
 /**
  * 📅 ForecastPanel Component
  * Displays weather forecast for upcoming days
+ *
+ * 🚀 Performance: Wrapped in React.memo for render optimization
  */
 'use client'
 
 import { format, parseISO } from 'date-fns'
 import { CalendarDays } from 'lucide-react'
+import { memo } from 'react'
 
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
@@ -46,7 +49,7 @@ function getWeatherEmoji(code?: number): string {
   return '🌤️'
 }
 
-export function ForecastPanel({
+export const ForecastPanel = memo(function ForecastPanel({
   data,
   isLoading = false,
   colSpan = 3,
@@ -147,4 +150,4 @@ export function ForecastPanel({
       </BentoPanelContent>
     </BentoPanel>
   )
-}
+})

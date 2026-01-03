@@ -1,10 +1,13 @@
 /**
  * 🌬️ AirQualityPanel Component
  * Displays air quality index and pollutant levels
+ *
+ * 🚀 Performance: Wrapped in React.memo for render optimization
  */
 'use client'
 
 import { Wind } from 'lucide-react'
+import { memo } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -86,7 +89,7 @@ function getAqiLevel(aqi: number) {
   )
 }
 
-export function AirQualityPanel({
+export const AirQualityPanel = memo(function AirQualityPanel({
   data,
   isLoading = false,
   colSpan = 2,
@@ -188,4 +191,4 @@ export function AirQualityPanel({
       </BentoPanelContent>
     </BentoPanel>
   )
-}
+})

@@ -1,12 +1,14 @@
 /**
  * 📊 Weather Chart Component
  * Base chart wrapper with Recharts and Motion animations
+ *
+ * 🚀 Performance: Wrapped in React.memo with useMemo for transformations
  */
 
 'use client'
 
 import { motion } from 'motion/react'
-import { useMemo } from 'react'
+import { memo, useCallback, useMemo } from 'react'
 import {
   Area,
   AreaChart,
@@ -76,7 +78,7 @@ interface WeatherChartProps {
   showLegend?: boolean
 }
 
-export function WeatherChart({
+export const WeatherChart = memo(function WeatherChart({
   data,
   variables,
   chartType = 'line',
@@ -88,7 +90,7 @@ export function WeatherChart({
   showGrid = true,
   showLegend = true,
 }: WeatherChartProps) {
-  // 📊 Prepare chart elements based on variables
+  // 📊 Prepare chart elements based on variables (memoized)
   const chartElements = useMemo(() => {
     return variables.map((variable) => ({
       dataKey: variable,
@@ -98,58 +100,61 @@ export function WeatherChart({
     }))
   }, [variables])
 
-  // 📊 Custom tooltip
-  const CustomTooltip = ({
-    active,
-    payload,
-    label,
-  }: {
-    active?: boolean
-    payload?: Array<{
-      dataKey: string
-      value: number
-      color: string
-      name: string
-    }>
-    label?: string
-  }) => {
-    if (!active || !payload || payload.length === 0) return null
+  // 📊 Custom tooltip (memoized to prevent re-creation)
+  const CustomTooltip = useCallback(
+    ({
+      active,
+      payload,
+      label,
+    }: {
+      active?: boolean
+      payload?: Array<{
+        dataKey: string
+        value: number
+        color: string
+        name: string
+      }>
+      label?: string
+    }) => {
+      if (!active || !payload || payload.length === 0) return null
 
-    return (
-      <div className="bg-popover border border-border rounded-lg shadow-lg p-3 min-w-[150px]">
-        <p className="font-medium text-sm mb-2">{label}</p>
-        <div className="space-y-1">
-          {payload.map((entry) => {
-            const variable = entry.dataKey as WeatherVariable
-            const config = variableConfig[variable]
-            return (
-              <div
-                key={entry.dataKey}
-                className="flex items-center justify-between gap-4 text-sm"
-              >
-                <span
-                  className="flex items-center gap-2"
-                  style={{ color: entry.color }}
+      return (
+        <div className="bg-popover border border-border rounded-lg shadow-lg p-3 min-w-[150px]">
+          <p className="font-medium text-sm mb-2">{label}</p>
+          <div className="space-y-1">
+            {payload.map((entry) => {
+              const variable = entry.dataKey as WeatherVariable
+              const config = variableConfig[variable]
+              return (
+                <div
+                  key={entry.dataKey}
+                  className="flex items-center justify-between gap-4 text-sm"
                 >
                   <span
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: entry.color }}
-                  />
-                  {entry.name}
-                </span>
-                <span className="font-mono">
-                  {typeof entry.value === 'number'
-                    ? entry.value.toFixed(1)
-                    : '—'}
-                  {config?.unit}
-                </span>
-              </div>
-            )
-          })}
+                    className="flex items-center gap-2"
+                    style={{ color: entry.color }}
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: entry.color }}
+                    />
+                    {entry.name}
+                  </span>
+                  <span className="font-mono">
+                    {typeof entry.value === 'number'
+                      ? entry.value.toFixed(1)
+                      : '—'}
+                    {config?.unit}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
         </div>
-      </div>
-    )
-  }
+      )
+    },
+    [],
+  )
 
   // 📊 Render chart based on type
   const renderChart = () => {
@@ -311,4 +316,4 @@ export function WeatherChart({
       </Card>
     </motion.div>
   )
-}
+})

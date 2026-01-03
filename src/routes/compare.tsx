@@ -1,7 +1,10 @@
 /**
  * 📊 Compare Route
  * Multi-location and historical year comparison
+ *
+ * 🔄 Performance: Uses TanStack Query for client-side caching
  */
+import { useQueries } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { format, parseISO } from 'date-fns'
 import { MapPin } from 'lucide-react'
@@ -21,7 +24,7 @@ import { z } from 'zod'
 
 import { getHistoricalWeather } from '@/api'
 import type { HistoricalDailyWeatherVariable } from '@/api/types'
-import { MapCanvas, MapMarker } from '@/components/map'
+import { LazyMapCanvas, MapMarker } from '@/components/map'
 import { Badge } from '@/components/ui/badge'
 import {
   Select,
@@ -31,6 +34,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { CACHE_TIMES, weatherKeys } from '@/lib/query-client'
 
 // 🎨 Color palette for comparison lines
 const comparisonColors = [
@@ -86,67 +90,6 @@ interface CompareLocation {
 
 export const Route = createFileRoute('/compare')({
   validateSearch: compareSearchSchema,
-  loaderDeps: ({ search }) => ({ search }),
-  loader: async ({ deps: { search } }) => {
-    // Parse years
-    const years = search.years
-      ? search.years
-          .split(',')
-          .map(Number)
-          .filter((y) => !Number.isNaN(y))
-      : [currentYear - 1, currentYear]
-
-    // Parse locations
-    const locations: CompareLocation[] = search.locations
-      ? search.locations
-          .split(';')
-          .map((loc) => {
-            const [name, lat, lon] = loc.split(',')
-            return { name, lat: Number(lat), lon: Number(lon) }
-          })
-          .filter((l) => !Number.isNaN(l.lat) && !Number.isNaN(l.lon))
-      : []
-
-    // If no locations, return empty data
-    if (locations.length === 0) {
-      return { locations, years, variable: search.variable, data: null }
-    }
-
-    // Fetch data for each location and year
-    const location = locations[0] // For now, use first location
-    const variable = search.variable ?? 'temperature_2m_mean'
-
-    try {
-      const yearData = await Promise.all(
-        years.map(async (year) => {
-          const startDate = `${year}-01-01`
-          const endDate = `${year}-12-31`
-
-          const response = await getHistoricalWeather({
-            data: {
-              latitude: location.lat,
-              longitude: location.lon,
-              start_date: startDate,
-              end_date: endDate,
-              daily: [variable] as HistoricalDailyWeatherVariable[],
-              timezone: 'auto',
-            },
-          })
-
-          return { year, response }
-        }),
-      )
-
-      return {
-        locations,
-        years,
-        variable,
-        data: yearData,
-      }
-    } catch {
-      return { locations, years, variable: search.variable, data: null }
-    }
-  },
 
   head: () => ({
     meta: [
@@ -163,11 +106,72 @@ export const Route = createFileRoute('/compare')({
 
 function ComparePage() {
   const navigate = useNavigate()
-  const { locations, years, variable, data } = Route.useLoaderData()
   const search = Route.useSearch()
 
-  const [selectedYears, setSelectedYears] = useState<number[]>(years)
-  const [selectedVariable, setSelectedVariable] = useState(variable)
+  // 📍 Parse locations from search params
+  const locations: CompareLocation[] = useMemo(() => {
+    if (!search.locations) return []
+    return search.locations
+      .split(';')
+      .map((loc) => {
+        const [name, lat, lon] = loc.split(',')
+        return { name, lat: Number(lat), lon: Number(lon) }
+      })
+      .filter((l) => !Number.isNaN(l.lat) && !Number.isNaN(l.lon))
+  }, [search.locations])
+
+  // 📅 Parse years from search params
+  const parsedYears = useMemo(() => {
+    if (!search.years) return [currentYear - 1, currentYear]
+    return search.years
+      .split(',')
+      .map(Number)
+      .filter((y) => !Number.isNaN(y))
+  }, [search.years])
+
+  const [selectedYears, setSelectedYears] = useState<number[]>(parsedYears)
+  const [selectedVariable, setSelectedVariable] =
+    useState<WeatherVariableValue>(search.variable ?? 'temperature_2m_mean')
+
+  // 📍 Get the first location for data fetching
+  const location = locations[0] ?? null
+
+  // 🔄 TanStack Query: Fetch data for each selected year (parallel queries)
+  const yearQueries = useQueries({
+    queries: selectedYears.map((year) => ({
+      queryKey: weatherKeys.historical(
+        location?.lat ?? 0,
+        location?.lon ?? 0,
+        `${year}-01-01`,
+        `${year}-12-31`,
+      ),
+      queryFn: () =>
+        getHistoricalWeather({
+          data: {
+            latitude: location?.lat ?? 0,
+            longitude: location?.lon ?? 0,
+            start_date: `${year}-01-01`,
+            end_date: `${year}-12-31`,
+            daily: [selectedVariable] as HistoricalDailyWeatherVariable[],
+            timezone: 'auto',
+          },
+        }),
+      enabled: !!location,
+      staleTime: CACHE_TIMES.HISTORICAL,
+    })),
+  })
+
+  // 📊 Combine query results
+  const data = useMemo(() => {
+    if (yearQueries.some((q) => !q.data)) return null
+    return selectedYears.map((year, i) => ({
+      year,
+      response: yearQueries[i].data,
+    }))
+  }, [yearQueries, selectedYears]) as Array<{
+    year: number
+    response: NonNullable<(typeof yearQueries)[number]['data']>
+  }> | null
 
   // 📊 Transform data for chart
   const chartData = useMemo(() => {
@@ -181,8 +185,9 @@ function ComparePage() {
 
       for (let i = 0; i < response.daily.time.length; i++) {
         const date = response.daily.time[i]
-        const monthKey = format(parseISO(date), 'MMM')
-        const values = response.daily[variable as keyof typeof response.daily]
+        const monthKey = format(parseISO(String(date)), 'MMM')
+        const values =
+          response.daily[selectedVariable as keyof typeof response.daily]
         const value = Array.isArray(values) ? values[i] : null
 
         if (!monthlyData[monthKey]) {
@@ -221,7 +226,7 @@ function ComparePage() {
     return monthOrder
       .filter((m) => monthlyData[m])
       .map((m) => ({ month: m, ...monthlyData[m] }))
-  }, [data, variable])
+  }, [data, selectedVariable])
 
   // 🔄 Update search params
   const handleYearToggle = useCallback(
@@ -260,7 +265,7 @@ function ComparePage() {
   return (
     <div className="relative h-full w-full">
       {/* 🗺️ Map canvas (background) */}
-      <MapCanvas
+      <LazyMapCanvas
         center={locations[0] ? [locations[0].lon, locations[0].lat] : undefined}
         zoom={locations.length > 0 ? 8 : 4}
         interactive={false}
@@ -275,7 +280,7 @@ function ComparePage() {
             variant={i === 0 ? 'selected' : 'default'}
           />
         ))}
-      </MapCanvas>
+      </LazyMapCanvas>
 
       {/* 📊 Comparison panel overlay */}
       <motion.div
