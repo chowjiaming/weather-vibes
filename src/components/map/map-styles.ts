@@ -92,19 +92,6 @@ export const lightMapStyle: StyleSpecification = {
       },
     },
 
-    // 📐 Contour lines - Very subtle
-    {
-      id: 'contour',
-      type: 'line',
-      source: 'openmaptiles',
-      'source-layer': 'contour',
-      paint: {
-        'line-color': '#e0e0e0',
-        'line-width': 0.4,
-        'line-opacity': 0.2,
-      },
-    },
-
     // 🛤️ Roads - Barely visible
     {
       id: 'roads-highway',
@@ -380,19 +367,6 @@ export const darkMapStyle: StyleSpecification = {
       paint: {
         'fill-color': '#151515',
         'fill-opacity': 0.4,
-      },
-    },
-
-    // 📐 Contour lines - Very subtle
-    {
-      id: 'contour',
-      type: 'line',
-      source: 'openmaptiles',
-      'source-layer': 'contour',
-      paint: {
-        'line-color': '#1f1f1f',
-        'line-width': 0.4,
-        'line-opacity': 0.3,
       },
     },
 

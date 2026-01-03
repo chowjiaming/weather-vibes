@@ -135,8 +135,9 @@ function ComparePage() {
   }, [search.locations, defaultLocation])
 
   // 📅 Parse years from search params
+  // ⚠️ Default to previous two complete years (not current year which may lack data)
   const parsedYears = useMemo(() => {
-    if (!search.years) return [currentYear - 1, currentYear]
+    if (!search.years) return [currentYear - 2, currentYear - 1]
     return search.years
       .split(',')
       .map(Number)
@@ -176,19 +177,21 @@ function ComparePage() {
   })
 
   // 📊 Check loading state properly
-  const isLoading = yearQueries.some((q) => q.isLoading || q.isPending)
+  // ⚠️ Use isFetching instead of isPending to avoid stuck loading states
+  const isFetching = yearQueries.some((q) => q.isFetching)
   const hasAllData = yearQueries.every((q) => q.data !== undefined)
+  const isReady = hasAllData && !isFetching
 
   // 📊 Combine query results
   const data = useMemo(() => {
-    // ✅ Only return null if still loading
-    if (isLoading || !hasAllData) return null
+    // ✅ Only return null if not ready
+    if (!isReady) return null
 
     return selectedYears.map((year, i) => ({
       year,
       response: yearQueries[i].data,
     }))
-  }, [yearQueries, selectedYears, isLoading, hasAllData]) as Array<{
+  }, [yearQueries, selectedYears, isReady]) as Array<{
     year: number
     response: NonNullable<(typeof yearQueries)[number]['data']>
   }> | null
