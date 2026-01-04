@@ -42,9 +42,12 @@ async function exportSvgToPng(
 
   const img = new Image()
   img.onload = () => {
+    const rect = svg.getBoundingClientRect()
     const canvas = document.createElement('canvas')
-    canvas.width = svg.clientWidth * pixelRatio
-    canvas.height = svg.clientHeight * pixelRatio
+    const width = Math.max(1, Math.round(rect.width))
+    const height = Math.max(1, Math.round(rect.height))
+    canvas.width = width * pixelRatio
+    canvas.height = height * pixelRatio
 
     const ctx = canvas.getContext('2d')
     if (ctx) {
@@ -59,6 +62,9 @@ async function exportSvgToPng(
       link.click()
     }
 
+    URL.revokeObjectURL(svgUrl)
+  }
+  img.onerror = () => {
     URL.revokeObjectURL(svgUrl)
   }
 
@@ -96,11 +102,13 @@ export function exportChartToCsv(
   // 💾 Download
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
   const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
+  const url = URL.createObjectURL(blob)
+  link.href = url
   link.download = `${filename}.csv`
   link.click()
 
-  URL.revokeObjectURL(link.href)
+  // 🧯 Delay revoke so Safari/slow downloads don’t get cancelled
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 /**
@@ -152,10 +160,12 @@ export function exportWorkspaceToCsv(
 
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
   const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
+  const url = URL.createObjectURL(blob)
+  link.href = url
   link.download = `${filename}.csv`
   link.click()
-  URL.revokeObjectURL(link.href)
+  // 🧯 Delay revoke so Safari/slow downloads don’t get cancelled
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 /**
@@ -174,10 +184,12 @@ export function exportWorkspaceViewToJson(
     type: 'application/json;charset=utf-8;',
   })
   const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
+  const url = URL.createObjectURL(blob)
+  link.href = url
   link.download = `${filename}.json`
   link.click()
-  URL.revokeObjectURL(link.href)
+  // 🧯 Delay revoke so Safari/slow downloads don’t get cancelled
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 /**
@@ -234,11 +246,13 @@ export function exportComparisonToCsv(
   // 💾 Download
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
   const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
+  const url = URL.createObjectURL(blob)
+  link.href = url
   link.download = `${filename}.csv`
   link.click()
 
-  URL.revokeObjectURL(link.href)
+  // 🧯 Delay revoke so Safari/slow downloads don’t get cancelled
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 /**

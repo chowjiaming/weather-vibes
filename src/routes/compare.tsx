@@ -18,6 +18,7 @@ import {
   WeatherChart,
 } from '@/components/charts'
 import { LazyMapCanvas, MapMarker } from '@/components/map'
+import { DateRangePicker } from '@/components/search'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCompareWorkspaceData } from '@/hooks/queries'
@@ -25,12 +26,14 @@ import { useDefaultLocation } from '@/hooks/use-default-location'
 import { calculateStats } from '@/lib/chart-config'
 import {
   aggregateSeries,
+  downsampleTimeSeries,
   normalizeCompareView,
   serializeYAxisMap,
 } from '@/lib/compare-workspace'
 import {
   type CompareSearchParams,
   compareSearchSchema,
+  serializeCompareLocations,
   serializeSearchParams,
   type WeatherVariable,
 } from '@/lib/search-params'
@@ -126,9 +129,7 @@ function ComparePage() {
   }, [search.vars, search.variable])
 
   const locationsParam = useMemo(() => {
-    return search.locations?.length
-      ? search.locations.map((l) => `${l.name},${l.lat},${l.lon}`).join(';')
-      : undefined
+    return serializeCompareLocations(search.locations)
   }, [search.locations])
 
   // 📅 Default to “last 90 days” unless specified (good for brush + baseline)
@@ -178,28 +179,17 @@ function ComparePage() {
       ? transformWeatherData(forecast, forecastVars as WeatherVariable[])
       : []
 
+    // 🔻 Recharts perf guard: keep charts snappy on long ranges
+    const MAX_POINTS = 900
+    const sampledHistorical = downsampleTimeSeries(historicalPoints, MAX_POINTS)
+    const sampledForecast = downsampleTimeSeries(forecastPoints, MAX_POINTS)
+
     const merged = mergeByDate(
-      [...historicalPoints, ...forecastPoints],
+      [...sampledHistorical, ...sampledForecast],
       view.vars,
     )
     return aggregateSeries(merged, view.vars, view.agg)
   }, [historical, forecast, view.vars, view.agg])
-
-  // 📌 Restore brush selection from URL zoomStart/zoomEnd
-  const brushRange = useMemo(() => {
-    const zoomStart = view.zoomStart
-    const zoomEnd = view.zoomEnd
-    if (!zoomStart || !zoomEnd || chartData.length === 0) return undefined
-
-    const startIdx = chartData.findIndex((d) => d.date && d.date >= zoomStart)
-    const endIdx =
-      chartData.length -
-      1 -
-      [...chartData].reverse().findIndex((d) => d.date && d.date <= zoomEnd)
-
-    if (startIdx < 0 || endIdx < 0) return undefined
-    return { startIndex: startIdx, endIndex: Math.max(startIdx, endIdx) }
-  }, [view.zoomStart, view.zoomEnd, chartData])
 
   const referenceLines = useMemo(() => {
     const primary = view.vars[0]
@@ -240,19 +230,27 @@ function ComparePage() {
 
   const chartRef = useRef<HTMLDivElement | null>(null)
 
-  // 🔄 Update search params
-  const handleYearToggle = useCallback(
-    (year: number) => {
-      const newYears = years.includes(year)
-        ? years.filter((y) => y !== year)
-        : [...years, year].slice(0, 6) // Max 6 years
-
+  // 🔁 Centralized URL updater to avoid duplicated (and drifting) search-state logic 🧭
+  const updateCompareSearch = useCallback(
+    (
+      patch: Partial<{
+        years: number[]
+        vars: WeatherVariable[]
+        variable: WeatherVariable | undefined
+        source: CompareSearchParams['source']
+        agg: CompareSearchParams['agg']
+        stats: CompareSearchParams['stats']
+        smooth: number
+        start: string
+        end: string
+        yAxes: string | undefined
+      }>,
+    ) => {
       navigate({
         to: '/compare',
         search: serializeSearchParams({
-          // ⚠️ Link/navigate typings expect the URL input shape (strings) for transformed Zod schemas
           locations: locationsParam,
-          years: newYears,
+          years,
           vars,
           variable: vars[0],
           source: view.source,
@@ -261,13 +259,27 @@ function ComparePage() {
           smooth: view.smoothDays,
           start: view.start,
           end: view.end,
-          zoomStart: view.zoomStart,
-          zoomEnd: view.zoomEnd,
           yAxes: serializeYAxisMap(view.yAxes),
+          ...patch,
+          // ✅ Brush is removed, so we ensure stale zoom params don’t linger
+          zoomStart: undefined,
+          zoomEnd: undefined,
         }),
       })
     },
-    [years, navigate, locationsParam, vars, view],
+    [navigate, locationsParam, years, vars, view],
+  )
+
+  // 🔄 Update search params
+  const handleYearToggle = useCallback(
+    (year: number) => {
+      const newYears = years.includes(year)
+        ? years.filter((y) => y !== year)
+        : [...years, year].slice(0, 6) // Max 6 years
+
+      updateCompareSearch({ years: newYears })
+    },
+    [years, updateCompareSearch],
   )
 
   // 📍 Determine if using explicit search params or default
@@ -304,7 +316,7 @@ function ComparePage() {
         {
           <div className="glass rounded-3xl p-6 max-w-5xl w-full max-h-[calc(100vh-8rem)] overflow-auto">
             {/* 🎛️ Controls */}
-            <div className="flex flex-wrap items-center gap-4 mb-6">
+            <div className="mb-4 flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-2">
                 <MapPin className="text-primary" size={20} />
                 <span className="font-medium">{locations[0].name}</span>
@@ -315,164 +327,79 @@ function ComparePage() {
                 )}
               </div>
 
-              <div className="flex-1" />
-
-              <CompareWorkspaceControls
-                vars={vars}
-                onVarsChange={(nextVars) => {
-                  navigate({
-                    to: '/compare',
-                    search: serializeSearchParams({
-                      locations: locationsParam,
-                      years,
+              {/* 🎚️ Keep filters to one line on desktop (2 total lines w/ years row) 🧼 */}
+              <div className="min-w-0 flex-1">
+                <CompareWorkspaceControls
+                  className="flex-wrap md:flex-nowrap md:overflow-x-auto md:whitespace-nowrap md:pb-1"
+                  vars={vars}
+                  onVarsChange={(nextVars) => {
+                    updateCompareSearch({
                       vars: nextVars,
                       variable: nextVars[0],
-                      source: view.source,
-                      agg: view.agg,
-                      stats: view.stats,
-                      smooth: view.smoothDays,
-                      start: view.start,
-                      end: view.end,
-                      zoomStart: view.zoomStart,
-                      zoomEnd: view.zoomEnd,
-                      yAxes: serializeYAxisMap(view.yAxes),
-                    }),
-                  })
-                }}
-                yAxes={view.yAxes}
-                onAxisChange={(nextAxes) => {
-                  navigate({
-                    to: '/compare',
-                    search: serializeSearchParams({
-                      locations: locationsParam,
-                      years,
-                      vars,
-                      variable: vars[0],
-                      source: view.source,
-                      agg: view.agg,
-                      stats: view.stats,
-                      smooth: view.smoothDays,
-                      start: view.start,
-                      end: view.end,
-                      zoomStart: view.zoomStart,
-                      zoomEnd: view.zoomEnd,
-                      yAxes: serializeYAxisMap(nextAxes),
-                    }),
-                  })
-                }}
-                source={view.source}
-                onSourceChange={(nextSource) => {
-                  navigate({
-                    to: '/compare',
-                    search: serializeSearchParams({
-                      locations: locationsParam,
-                      years,
-                      vars,
-                      variable: vars[0],
-                      source: nextSource,
-                      agg: view.agg,
-                      stats: view.stats,
-                      smooth: view.smoothDays,
-                      start: view.start,
-                      end: view.end,
-                      zoomStart: view.zoomStart,
-                      zoomEnd: view.zoomEnd,
-                      yAxes: serializeYAxisMap(view.yAxes),
-                    }),
-                  })
-                }}
-                agg={view.agg}
-                onAggChange={(nextAgg) => {
-                  navigate({
-                    to: '/compare',
-                    search: serializeSearchParams({
-                      locations: locationsParam,
-                      years,
-                      vars,
-                      variable: vars[0],
-                      source: view.source,
-                      agg: nextAgg,
-                      stats: view.stats,
-                      smooth: view.smoothDays,
-                      start: view.start,
-                      end: view.end,
-                      zoomStart: view.zoomStart,
-                      zoomEnd: view.zoomEnd,
-                      yAxes: serializeYAxisMap(view.yAxes),
-                    }),
-                  })
-                }}
-                stats={view.stats}
-                onStatsChange={(nextStats) => {
-                  navigate({
-                    to: '/compare',
-                    search: serializeSearchParams({
-                      locations: locationsParam,
-                      years,
-                      vars,
-                      variable: vars[0],
-                      source: view.source,
-                      agg: view.agg,
-                      stats: nextStats,
-                      smooth: view.smoothDays,
-                      start: view.start,
-                      end: view.end,
-                      zoomStart: view.zoomStart,
-                      zoomEnd: view.zoomEnd,
-                      yAxes: serializeYAxisMap(view.yAxes),
-                    }),
-                  })
-                }}
-                smoothDays={view.smoothDays}
-                onSmoothDaysChange={(nextDays) => {
-                  navigate({
-                    to: '/compare',
-                    search: serializeSearchParams({
-                      locations: locationsParam,
-                      years,
-                      vars,
-                      variable: vars[0],
-                      source: view.source,
-                      agg: view.agg,
-                      stats: view.stats,
-                      smooth: nextDays,
-                      start: view.start,
-                      end: view.end,
-                      zoomStart: view.zoomStart,
-                      zoomEnd: view.zoomEnd,
-                      yAxes: serializeYAxisMap(view.yAxes),
-                    }),
-                  })
-                }}
-                onExport={(fmt) => {
-                  if (fmt === 'png') {
-                    exportChartToPng(chartRef.current, 'compare-workspace')
-                  } else {
-                    exportWorkspaceToCsv(
-                      chartData,
-                      view.vars,
-                      view,
-                      'compare-workspace',
-                    )
-                  }
-                }}
-              />
+                    })
+                  }}
+                  yAxes={view.yAxes}
+                  onAxisChange={(nextAxes) => {
+                    updateCompareSearch({ yAxes: serializeYAxisMap(nextAxes) })
+                  }}
+                  source={view.source}
+                  onSourceChange={(nextSource) => {
+                    updateCompareSearch({ source: nextSource })
+                  }}
+                  agg={view.agg}
+                  onAggChange={(nextAgg) => {
+                    updateCompareSearch({ agg: nextAgg })
+                  }}
+                  stats={view.stats}
+                  onStatsChange={(nextStats) => {
+                    updateCompareSearch({ stats: nextStats })
+                  }}
+                  smoothDays={view.smoothDays}
+                  onSmoothDaysChange={(nextDays) => {
+                    updateCompareSearch({ smooth: nextDays })
+                  }}
+                  onExport={(fmt) => {
+                    if (fmt === 'png') {
+                      exportChartToPng(chartRef.current, 'compare-workspace')
+                    } else {
+                      exportWorkspaceToCsv(
+                        chartData,
+                        view.vars,
+                        view,
+                        'compare-workspace',
+                      )
+                    }
+                  }}
+                />
+              </div>
             </div>
 
-            {/* 📅 Year selector */}
-            <div className="flex flex-wrap gap-2 mb-6">
-              {availableYears.slice(0, 10).map((year) => (
-                <Badge
-                  key={year}
-                  variant={years.includes(year) ? 'default' : 'outline'}
-                  size="lg"
-                  interactive
-                  className="cursor-pointer"
-                  onClick={() => handleYearToggle(year)}
-                >
-                  {year}
-                </Badge>
-              ))}
+            {/* 📅 Date + years row (keep compare “filters” to 2 lines on desktop) 🧭 */}
+            <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">
+              <DateRangePicker
+                className="w-full md:w-auto"
+                value={{ start: view.start, end: view.end }}
+                onChange={({ start, end }) => {
+                  updateCompareSearch({ start, end })
+                }}
+              />
+
+              <div className="min-w-0 flex-1">
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {availableYears.slice(0, 10).map((year) => (
+                    <Badge
+                      key={year}
+                      variant={years.includes(year) ? 'default' : 'outline'}
+                      size="lg"
+                      interactive
+                      className="cursor-pointer shrink-0"
+                      onClick={() => handleYearToggle(year)}
+                    >
+                      {year}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* 📈 Chart */}
@@ -484,55 +411,39 @@ function ComparePage() {
                   chartType={view.chart}
                   yAxes={view.yAxes}
                   referenceLines={referenceLines}
-                  brush={{
-                    enabled: true,
-                    startIndex: brushRange?.startIndex,
-                    endIndex: brushRange?.endIndex,
-                    onChange: ({ startIndex, endIndex }) => {
-                      if (
-                        startIndex === undefined ||
-                        endIndex === undefined ||
-                        chartData.length === 0
-                      ) {
-                        return
-                      }
-
-                      const start = chartData[startIndex]?.date
-                      const end = chartData[endIndex]?.date
-                      if (!start || !end) return
-
-                      navigate({
-                        to: '/compare',
-                        search: serializeSearchParams({
-                          locations: locationsParam,
-                          years,
-                          vars,
-                          variable: vars[0],
-                          source: view.source,
-                          agg: view.agg,
-                          stats: view.stats,
-                          smooth: view.smoothDays,
-                          start: view.start,
-                          end: view.end,
-                          zoomStart: start,
-                          zoomEnd: end,
-                          yAxes: serializeYAxisMap(view.yAxes),
-                        }),
-                      })
-                    },
-                  }}
                 />
               </div>
             ) : (
               <div className="h-[400px] w-full flex items-center justify-center">
-                <div className="text-center text-muted-foreground">
-                  <Skeleton className="h-[300px] w-full rounded-xl" />
-                  <p className="mt-4">
-                    {isLoading
-                      ? 'Loading workspace data...'
-                      : 'No data for this selection.'}
-                  </p>
-                </div>
+                {isLoading ? (
+                  <div className="w-full max-w-4xl">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-48" />
+                        <Skeleton className="h-3 w-72" />
+                      </div>
+                      <Skeleton className="h-8 w-28" />
+                    </div>
+                    <div className="rounded-xl border border-border/60 bg-background/30 p-4">
+                      <Skeleton className="h-[300px] w-full rounded-lg" />
+                      <div className="mt-3 grid grid-cols-3 gap-3">
+                        <Skeleton className="h-10 w-full" />
+                        <Skeleton className="h-10 w-full" />
+                        <Skeleton className="h-10 w-full" />
+                      </div>
+                    </div>
+                    <p className="mt-4 text-center text-sm text-muted-foreground">
+                      Loading comparison data… fetching archive + forecast 📡
+                    </p>
+                  </div>
+                ) : (
+                  <div className="text-center text-muted-foreground">
+                    <p className="text-sm">No data for this selection.</p>
+                    <p className="text-xs mt-1">
+                      Try widening the date range or changing variables.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>

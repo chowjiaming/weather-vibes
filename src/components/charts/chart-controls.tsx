@@ -295,12 +295,18 @@ export function CompareWorkspaceControls({
 
       {/* 🧭 Axes */}
       <Popover>
+        {/* Base UI Trigger expects a render callback so it can wire events/ref correctly 🧩 */}
         <PopoverTrigger
-          render={
-            <Button variant="outline" size="sm">
+          render={(triggerProps) => (
+            <Button
+              {...triggerProps}
+              variant="outline"
+              size="sm"
+              className={cn(triggerProps.className)}
+            >
               Axes
             </Button>
-          }
+          )}
         />
         <PopoverContent className="w-[320px]" align="start">
           <div className="text-sm font-medium mb-2">Y-axis assignment</div>
@@ -345,12 +351,18 @@ export function CompareWorkspaceControls({
 
       {/* 📊 Overlays */}
       <Popover>
+        {/* Base UI Trigger expects a render callback so it can wire events/ref correctly 🧩 */}
         <PopoverTrigger
-          render={
-            <Button variant="outline" size="sm">
+          render={(triggerProps) => (
+            <Button
+              {...triggerProps}
+              variant="outline"
+              size="sm"
+              className={cn(triggerProps.className)}
+            >
               Overlays
             </Button>
-          }
+          )}
         />
         <PopoverContent className="w-[320px]" align="start">
           <div className="text-sm font-medium mb-2">Stats overlays</div>
@@ -377,6 +389,8 @@ export function CompareWorkspaceControls({
               min={1}
               max={60}
               value={smoothDays}
+              // UX: select-all so typing replaces `7` instead of appending (`714`) ✨
+              onFocus={(e) => e.currentTarget.select()}
               onChange={(e) => onSmoothDaysChange(Number(e.target.value))}
             />
           </div>

@@ -236,6 +236,51 @@ export function addRollingAverageSeries(
 }
 
 /**
+ * 🔻 Downsample a time-series to a maximum number of points.
+ *
+ * This is a lightweight performance guard for Recharts when users select
+ * very long ranges. We keep:
+ * - first point
+ * - last point
+ * - evenly spaced intermediate points
+ *
+ * (We can upgrade to LTTB/min-max bucket sampling later if needed.)
+ */
+export function downsampleTimeSeries<T extends { date?: string }>(
+  data: T[],
+  maxPoints: number,
+): T[] {
+  if (maxPoints <= 0) return []
+  if (data.length <= maxPoints) return data
+  if (data.length <= 2) return data
+
+  const first = data[0]
+  const last = data[data.length - 1]
+  const remaining = maxPoints - 2
+  if (remaining <= 0) return [first, last]
+
+  const stride = (data.length - 2) / remaining
+  const out: T[] = [first]
+
+  for (let i = 0; i < remaining; i++) {
+    const idx = 1 + Math.floor(i * stride)
+    const point = data[idx]
+    if (point) out.push(point)
+  }
+
+  out.push(last)
+
+  // Ensure monotonic dates (defensive)
+  const seen = new Set<string>()
+  return out.filter((p) => {
+    if (!p.date) return true
+    if (seen.has(p.date)) return false
+    seen.add(p.date)
+    return true
+  })
+}
+
+/**
  * Serialize axis mapping back to URL-friendly form.
  */
 export function serializeYAxisMap(
