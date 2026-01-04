@@ -36,7 +36,9 @@ const siteConfig = {
   description:
     'Explore historical weather patterns from 1940 to present. Compare climate trends across cities and years with interactive charts and data visualization.',
   url: 'https://weathervibes.xyz',
-  ogImage: 'https://weathervibes.xyz/og-image.png',
+  // ✅ Use an existing public asset to ensure unfurlers always succeed.
+  // (A dedicated 1200x630 OG image can be added later.)
+  ogImage: 'https://weathervibes.xyz/logo512.png',
   twitterHandle: '@chowjiaming',
 }
 
@@ -65,8 +67,8 @@ export const Route = createRootRoute({
       { property: 'og:description', content: siteConfig.description },
       { property: 'og:url', content: siteConfig.url },
       { property: 'og:image', content: siteConfig.ogImage },
-      { property: 'og:image:width', content: '1200' },
-      { property: 'og:image:height', content: '630' },
+      { property: 'og:image:width', content: '512' },
+      { property: 'og:image:height', content: '512' },
       { property: 'og:locale', content: 'en_US' },
 
       // 🐦 Twitter Card

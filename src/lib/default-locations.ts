@@ -441,6 +441,14 @@ const FALLBACK_DEFAULT: DefaultLocation = {
 }
 
 /**
+ * 🧱 SSR-safe fallback location getter
+ * Always returns the deterministic fallback (used for hydration-safe initial render) ✅
+ */
+export function getFallbackLocation(): DefaultLocation {
+  return FALLBACK_DEFAULT
+}
+
+/**
  * 🔍 Get the default location based on user's timezone
  * Falls back to London if timezone is not recognized
  */

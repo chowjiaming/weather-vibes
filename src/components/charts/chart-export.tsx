@@ -4,6 +4,7 @@
  */
 
 import { variableConfig } from '@/lib/chart-config'
+import type { CompareWorkspaceView } from '@/lib/compare-workspace'
 import type { WeatherVariable } from '@/lib/search-params'
 import type { ChartDataPoint } from '@/lib/weather-utils'
 
@@ -29,7 +30,11 @@ export async function exportChartToPng(
 async function exportSvgToPng(
   svg: SVGElement,
   filename: string,
+  opts?: { pixelRatio?: number; background?: string },
 ): Promise<void> {
+  const pixelRatio = opts?.pixelRatio ?? 2
+  const background = opts?.background ?? '#ffffff'
+
   const serializer = new XMLSerializer()
   const svgString = serializer.serializeToString(svg)
   const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
@@ -38,14 +43,14 @@ async function exportSvgToPng(
   const img = new Image()
   img.onload = () => {
     const canvas = document.createElement('canvas')
-    canvas.width = svg.clientWidth * 2
-    canvas.height = svg.clientHeight * 2
+    canvas.width = svg.clientWidth * pixelRatio
+    canvas.height = svg.clientHeight * pixelRatio
 
     const ctx = canvas.getContext('2d')
     if (ctx) {
-      ctx.fillStyle = '#ffffff'
+      ctx.fillStyle = background
       ctx.fillRect(0, 0, canvas.width, canvas.height)
-      ctx.scale(2, 2)
+      ctx.scale(pixelRatio, pixelRatio)
       ctx.drawImage(img, 0, 0)
 
       const link = document.createElement('a')
@@ -96,6 +101,95 @@ export function exportChartToCsv(
   link.click()
 
   URL.revokeObjectURL(link.href)
+}
+
+/**
+ * 📊 Export compare workspace chart data to CSV
+ * Includes a small metadata header for easier LLM/human consumption.
+ */
+export function exportWorkspaceToCsv(
+  data: ChartDataPoint[],
+  variables: WeatherVariable[],
+  view: Pick<
+    CompareWorkspaceView,
+    'location' | 'source' | 'agg' | 'start' | 'end' | 'years'
+  >,
+  filename: string = 'compare-workspace',
+): void {
+  if (data.length === 0) return
+
+  const headers = ['Date', ...variables.map((v) => variableConfig[v].label)]
+
+  const rows = data.map((row) => {
+    const values = [
+      row.date,
+      ...variables.map((v) => {
+        const value = row[v]
+        return value !== null && value !== undefined ? String(value) : ''
+      }),
+    ]
+    return values.join(',')
+  })
+
+  const metaLines = [
+    `# Weather Vibes Compare Workspace`,
+    `# Location: ${view.location.name} (${view.location.lat}, ${view.location.lon})`,
+    `# Source: ${view.source}`,
+    `# Aggregation: ${view.agg}`,
+    view.start && view.end
+      ? `# Range: ${view.start} to ${view.end}`
+      : undefined,
+    view.years && view.years.length > 0
+      ? `# Years: ${view.years.join(', ')}`
+      : undefined,
+    `# Variables: ${variables
+      .map((v) => `${variableConfig[v].label} (${variableConfig[v].unit})`)
+      .join(', ')}`,
+    '',
+  ].filter(Boolean) as string[]
+
+  const csv = metaLines.join('\n') + [headers.join(','), ...rows].join('\n')
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = `${filename}.csv`
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+
+/**
+ * 🧾 Export compare workspace config to JSON (useful for “saved views” and LLMs)
+ */
+export function exportWorkspaceViewToJson(
+  view: CompareWorkspaceView,
+  filename: string = 'compare-view',
+): void {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    view,
+  }
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: 'application/json;charset=utf-8;',
+  })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = `${filename}.json`
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+
+/**
+ * 🔗 Copy a link to clipboard (shareable URL-state)
+ */
+export async function copyLinkToClipboard(url: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(url)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**

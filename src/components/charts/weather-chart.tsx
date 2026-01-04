@@ -14,6 +14,7 @@ import {
   AreaChart,
   Bar,
   BarChart,
+  Brush,
   CartesianGrid,
   Legend,
   Line,
@@ -65,6 +66,31 @@ interface WeatherChartProps {
    */
   referenceLine?: number
   /**
+   * 📍 Show multiple reference lines (eg min/mean/max overlays)
+   */
+  referenceLines?: Array<{
+    y: number
+    yAxisId?: 'left' | 'right'
+    label?: string
+  }>
+  /**
+   * 🧭 Assign variables to left/right axes (multi-axis charts)
+   */
+  yAxes?: Partial<Record<WeatherVariable, 'left' | 'right'>>
+  /**
+   * 🔍 Enable a brush for zooming/selection (timeline charts)
+   */
+  brush?: {
+    enabled?: boolean
+    startIndex?: number
+    endIndex?: number
+    onChange?: (range: { startIndex?: number; endIndex?: number }) => void
+  }
+  /**
+   * 🔗 Sync interactions across multiple charts
+   */
+  syncId?: string
+  /**
    * 🔄 Animate on mount
    */
   animate?: boolean
@@ -86,19 +112,51 @@ export const WeatherChart = memo(function WeatherChart({
   height = 300,
   className,
   referenceLine,
+  referenceLines,
+  yAxes,
+  brush,
+  syncId,
   animate = true,
   showGrid = true,
   showLegend = true,
 }: WeatherChartProps) {
   // 📊 Prepare chart elements based on variables (memoized)
   const chartElements = useMemo(() => {
-    return variables.map((variable) => ({
-      dataKey: variable,
-      name: variableConfig[variable].shortLabel,
-      color: chartColors[variable],
-      unit: variableConfig[variable].unit,
-    }))
-  }, [variables])
+    // Default axis assignment: first variable goes left, others follow config or right.
+    const defaultLeft = variables[0]
+
+    return variables.map((variable) => {
+      const axis: 'left' | 'right' =
+        yAxes?.[variable] ?? (variable === defaultLeft ? 'left' : 'left')
+
+      return {
+        dataKey: variable,
+        name: variableConfig[variable].shortLabel,
+        color: chartColors[variable],
+        unit: variableConfig[variable].unit,
+        yAxisId: axis,
+      }
+    })
+  }, [variables, yAxes])
+
+  const hasRightAxis = useMemo(
+    () => chartElements.some((el) => el.yAxisId === 'right'),
+    [chartElements],
+  )
+
+  const leftUnit = useMemo(() => {
+    const units = new Set(
+      chartElements.filter((el) => el.yAxisId === 'left').map((el) => el.unit),
+    )
+    return units.size === 1 ? Array.from(units)[0] : undefined
+  }, [chartElements])
+
+  const rightUnit = useMemo(() => {
+    const units = new Set(
+      chartElements.filter((el) => el.yAxisId === 'right').map((el) => el.unit),
+    )
+    return units.size === 1 ? Array.from(units)[0] : undefined
+  }, [chartElements])
 
   // 📊 Custom tooltip (memoized to prevent re-creation)
   const CustomTooltip = useCallback(
@@ -161,6 +219,7 @@ export const WeatherChart = memo(function WeatherChart({
     const commonProps = {
       data,
       margin: { top: 10, right: 10, left: 0, bottom: 0 },
+      syncId,
     }
 
     const axisProps = {
@@ -172,14 +231,39 @@ export const WeatherChart = memo(function WeatherChart({
           axisLine={false}
         />
       ),
-      yAxis: (
+      yAxisLeft: (
         <YAxis
+          yAxisId="left"
           tick={{ fontSize: 12 }}
           tickLine={false}
           axisLine={false}
           width={50}
+          tickFormatter={(v) =>
+            leftUnit
+              ? `${v}${leftUnit}`
+              : typeof v === 'number'
+                ? String(v)
+                : ''
+          }
         />
       ),
+      yAxisRight: hasRightAxis ? (
+        <YAxis
+          yAxisId="right"
+          orientation="right"
+          tick={{ fontSize: 12 }}
+          tickLine={false}
+          axisLine={false}
+          width={50}
+          tickFormatter={(v) =>
+            rightUnit
+              ? `${v}${rightUnit}`
+              : typeof v === 'number'
+                ? String(v)
+                : ''
+          }
+        />
+      ) : null,
       grid: showGrid ? (
         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
       ) : null,
@@ -192,12 +276,41 @@ export const WeatherChart = memo(function WeatherChart({
           )}
         />
       ) : null,
-      referenceLine:
-        referenceLine !== undefined ? (
+      referenceLine: (() => {
+        const lines =
+          referenceLines && referenceLines.length > 0
+            ? referenceLines
+            : referenceLine !== undefined
+              ? [{ y: referenceLine, yAxisId: 'left' as const }]
+              : []
+
+        if (lines.length === 0) return null
+
+        return lines.map((l) => (
           <ReferenceLine
-            y={referenceLine}
+            key={`${l.yAxisId ?? 'left'}-${l.y}`}
+            yAxisId={l.yAxisId ?? 'left'}
+            y={l.y}
+            label={l.label}
             stroke="hsl(var(--muted-foreground))"
             strokeDasharray="3 3"
+          />
+        ))
+      })(),
+      brush:
+        brush?.enabled && data.length > 0 ? (
+          <Brush
+            dataKey="formattedDate"
+            height={28}
+            travellerWidth={10}
+            startIndex={brush.startIndex}
+            endIndex={brush.endIndex}
+            onChange={(range) => {
+              brush.onChange?.({
+                startIndex: range?.startIndex,
+                endIndex: range?.endIndex,
+              })
+            }}
           />
         ) : null,
     }
@@ -208,13 +321,15 @@ export const WeatherChart = memo(function WeatherChart({
           <BarChart {...commonProps}>
             {axisProps.grid}
             {axisProps.xAxis}
-            {axisProps.yAxis}
+            {axisProps.yAxisLeft}
+            {axisProps.yAxisRight}
             {axisProps.tooltip}
             {axisProps.legend}
             {axisProps.referenceLine}
             {chartElements.map((el) => (
               <Bar
                 key={el.dataKey}
+                yAxisId={el.yAxisId}
                 dataKey={el.dataKey}
                 name={el.name}
                 fill={el.color}
@@ -222,6 +337,7 @@ export const WeatherChart = memo(function WeatherChart({
                 animationDuration={animate ? 750 : 0}
               />
             ))}
+            {axisProps.brush}
           </BarChart>
         )
 
@@ -230,13 +346,15 @@ export const WeatherChart = memo(function WeatherChart({
           <AreaChart {...commonProps}>
             {axisProps.grid}
             {axisProps.xAxis}
-            {axisProps.yAxis}
+            {axisProps.yAxisLeft}
+            {axisProps.yAxisRight}
             {axisProps.tooltip}
             {axisProps.legend}
             {axisProps.referenceLine}
             {chartElements.map((el) => (
               <Area
                 key={el.dataKey}
+                yAxisId={el.yAxisId}
                 type="monotone"
                 dataKey={el.dataKey}
                 name={el.name}
@@ -246,6 +364,7 @@ export const WeatherChart = memo(function WeatherChart({
                 animationDuration={animate ? 750 : 0}
               />
             ))}
+            {axisProps.brush}
           </AreaChart>
         )
 
@@ -254,7 +373,8 @@ export const WeatherChart = memo(function WeatherChart({
           <ScatterChart {...commonProps}>
             {axisProps.grid}
             {axisProps.xAxis}
-            {axisProps.yAxis}
+            {axisProps.yAxisLeft}
+            {axisProps.yAxisRight}
             {axisProps.tooltip}
             {axisProps.legend}
             {chartElements.map((el) => (
@@ -266,6 +386,7 @@ export const WeatherChart = memo(function WeatherChart({
                 animationDuration={animate ? 750 : 0}
               />
             ))}
+            {axisProps.brush}
           </ScatterChart>
         )
 
@@ -274,7 +395,8 @@ export const WeatherChart = memo(function WeatherChart({
           <LineChart {...commonProps}>
             {axisProps.grid}
             {axisProps.xAxis}
-            {axisProps.yAxis}
+            {axisProps.yAxisLeft}
+            {axisProps.yAxisRight}
             {axisProps.tooltip}
             {axisProps.legend}
             {axisProps.referenceLine}
@@ -289,8 +411,10 @@ export const WeatherChart = memo(function WeatherChart({
                 dot={false}
                 activeDot={{ r: 4, strokeWidth: 2 }}
                 animationDuration={animate ? 750 : 0}
+                yAxisId={el.yAxisId}
               />
             ))}
+            {axisProps.brush}
           </LineChart>
         )
     }

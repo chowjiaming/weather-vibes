@@ -146,35 +146,192 @@ export type CitySearchParams = z.infer<typeof citySearchSchema>
 /**
  * 🔄 Compare page search params schema
  */
-export const compareSearchSchema = z.object({
-  // 📍 Locations to compare (comma-separated slugs)
-  locations: z
-    .string()
-    .transform((v) => v.split(',').filter(Boolean))
-    .optional(),
+const axisSideSchema = z.enum(['left', 'right'])
+export type AxisSide = z.infer<typeof axisSideSchema>
 
-  // 🔢 Years to compare
-  years: z
-    .string()
-    .transform((v) =>
-      v
-        .split(',')
-        .map(Number)
-        .filter((n) => !Number.isNaN(n)),
+export type CompareLocation = {
+  name: string
+  lat: number
+  lon: number
+}
+
+/**
+ * Parse compare locations from a compact string format.
+ *
+ * Format:
+ * - `Name,lat,lon;Name2,lat,lon`
+ *
+ * Example:
+ * - `Berlin,52.52,13.405;Paris,48.8566,2.3522`
+ */
+function parseCompareLocations(input: string): CompareLocation[] {
+  return input
+    .split(';')
+    .map((loc) => {
+      const [name, lat, lon] = loc.split(',')
+      const latNum = Number(lat)
+      const lonNum = Number(lon)
+      return {
+        name: name?.trim() ?? '',
+        lat: latNum,
+        lon: lonNum,
+      }
+    })
+    .filter(
+      (l) =>
+        l.name.length > 0 &&
+        !Number.isNaN(l.lat) &&
+        !Number.isNaN(l.lon) &&
+        l.lat >= -90 &&
+        l.lat <= 90 &&
+        l.lon >= -180 &&
+        l.lon <= 180,
     )
-    .pipe(z.array(z.number().min(1940).max(new Date().getFullYear())))
-    .optional()
-    .catch([new Date().getFullYear() - 1, new Date().getFullYear()]),
+}
 
-  // 📊 Variable to compare
-  variable: z.enum(weatherVariables).optional().default('temperature_2m_mean'),
+export const compareDataSources = ['forecast', 'historical', 'both'] as const
+export type CompareDataSource = (typeof compareDataSources)[number]
 
-  // 📈 Chart type
-  chart: z.enum(chartTypes).optional().default('line'),
+export const compareAggregations = ['daily', 'weekly', 'monthly'] as const
+export type CompareAggregation = (typeof compareAggregations)[number]
 
-  // ⚙️ Units
-  tempUnit: z.enum(temperatureUnits).optional().default('celsius'),
-})
+export const compareStats = [
+  'min',
+  'max',
+  'mean',
+  'median',
+  'p10',
+  'p90',
+  'rolling',
+] as const
+export type CompareStat = (typeof compareStats)[number]
+
+/**
+ * Compare page URL-state schema.
+ *
+ * This is intentionally richer than other routes because `/compare` is treated as
+ * a shareable “analysis workspace” whose entire configuration lives in the URL.
+ */
+export const compareSearchSchema = z
+  .object({
+    // 📍 Locations to compare (compact string form, parsed into objects)
+    locations: z
+      .string()
+      .transform((v) => parseCompareLocations(v))
+      .optional(),
+
+    // 🔢 Years to compare (used for historical baseline / YoY views)
+    years: z
+      .string()
+      .transform((v) =>
+        v
+          .split(',')
+          .map(Number)
+          .filter((n) => !Number.isNaN(n)),
+      )
+      .pipe(z.array(z.number().min(1940).max(new Date().getFullYear())))
+      .optional(),
+
+    // 📊 Primary variable for single-variable views (eg YoY chart)
+    variable: z.enum(weatherVariables).optional(),
+
+    // 📊 Multi-variable selection for workspace timeline view
+    vars: z
+      .string()
+      .transform((v) => v.split(',').filter(Boolean))
+      .pipe(z.array(z.enum(weatherVariables)))
+      .optional(),
+
+    // 🧪 Data source strategy
+    source: z.enum(compareDataSources).optional().default('both'),
+
+    // 📦 Aggregation mode for timeline view
+    agg: z.enum(compareAggregations).optional().default('daily'),
+
+    // 📅 Date range overrides (YYYY-MM-DD). If omitted, the page decides defaults.
+    start: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    end: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+
+    // 🔍 Zoom window (YYYY-MM-DD) for Brush/zoom restoring
+    zoomStart: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    zoomEnd: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+
+    // 📈 Chart type (applies to timeline view)
+    chart: z.enum(chartTypes).optional().default('line'),
+
+    // 📊 Stats overlays toggles
+    stats: z
+      .string()
+      .transform((v) => v.split(',').filter(Boolean))
+      .pipe(z.array(z.enum(compareStats)))
+      .optional()
+      .catch([]),
+
+    // 📈 Rolling average window (days). Only used if `stats` includes `rolling`.
+    smooth: z.coerce.number().int().min(1).max(60).optional().catch(7),
+
+    // 🧭 Axis side assignments per variable (semicolon-separated pairs).
+    // Format: `temperature_2m_mean:left;precipitation_sum:right`
+    yAxes: z
+      .string()
+      .transform((v) => {
+        const pairs = v
+          .split(';')
+          .map((p) => p.trim())
+          .filter(Boolean)
+        const result: Partial<Record<WeatherVariable, AxisSide>> = {}
+        for (const pair of pairs) {
+          const [rawVar, rawSide] = pair.split(':')
+          if (!rawVar || !rawSide) continue
+          // Only accept known vars/sides
+          if ((weatherVariables as readonly string[]).includes(rawVar)) {
+            const parsedSide = axisSideSchema.safeParse(rawSide)
+            if (parsedSide.success) {
+              result[rawVar as WeatherVariable] = parsedSide.data
+            }
+          }
+        }
+        return result
+      })
+      .optional()
+      .catch({}),
+
+    // ⚙️ Units
+    tempUnit: z.enum(temperatureUnits).optional().default('celsius'),
+    windUnit: z.enum(windSpeedUnits).optional().default('kmh'),
+    precipUnit: z.enum(precipitationUnits).optional().default('mm'),
+  })
+  .transform((input) => {
+    // 🔁 Back-compat: if `vars` missing but `variable` present, promote it.
+    const vars =
+      input.vars && input.vars.length > 0
+        ? input.vars
+        : input.variable
+          ? [input.variable]
+          : undefined
+
+    // 🔁 Back-compat: if `variable` missing but `vars` present, pick first for single-var views.
+    const variable =
+      input.variable ?? (vars?.[0] as WeatherVariable | undefined)
+
+    return {
+      ...input,
+      vars,
+      variable,
+    }
+  })
 
 export type CompareSearchParams = z.infer<typeof compareSearchSchema>
 

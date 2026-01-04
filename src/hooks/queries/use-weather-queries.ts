@@ -46,7 +46,10 @@ export function useHistoricalWeather({
   enabled = true,
 }: UseHistoricalWeatherOptions) {
   return useQuery({
-    queryKey: weatherKeys.historical(latitude, longitude, startDate, endDate),
+    queryKey: weatherKeys.historical(latitude, longitude, startDate, endDate, {
+      daily: variables,
+      timezone,
+    }),
     queryFn: () =>
       getHistoricalWeather({
         data: {
@@ -93,22 +96,28 @@ export function useForecast({
   timezone = 'auto',
   enabled = true,
 }: UseForecastOptions) {
+  const daily = [
+    'weather_code',
+    'temperature_2m_max',
+    'temperature_2m_min',
+    'precipitation_sum',
+    'wind_speed_10m_max',
+    'sunrise',
+    'sunset',
+  ] as const
+
   return useQuery({
-    queryKey: weatherKeys.forecast(latitude, longitude),
+    queryKey: weatherKeys.forecast(latitude, longitude, {
+      forecastDays,
+      daily,
+      timezone,
+    }),
     queryFn: () =>
       getWeatherForecast({
         data: {
           latitude,
           longitude,
-          daily: [
-            'weather_code',
-            'temperature_2m_max',
-            'temperature_2m_min',
-            'precipitation_sum',
-            'wind_speed_10m_max',
-            'sunrise',
-            'sunset',
-          ],
+          daily: [...daily],
           forecast_days: forecastDays,
           timezone,
         },
@@ -136,19 +145,25 @@ export function usePrefetchWeather() {
 
   const prefetchForecast = useCallback(
     (latitude: number, longitude: number) => {
+      const daily = [
+        'weather_code',
+        'temperature_2m_max',
+        'temperature_2m_min',
+        'precipitation_sum',
+      ] as const
+
       queryClient.prefetchQuery({
-        queryKey: weatherKeys.forecast(latitude, longitude),
+        queryKey: weatherKeys.forecast(latitude, longitude, {
+          forecastDays: 7,
+          daily,
+          timezone: 'auto',
+        }),
         queryFn: () =>
           getWeatherForecast({
             data: {
               latitude,
               longitude,
-              daily: [
-                'weather_code',
-                'temperature_2m_max',
-                'temperature_2m_min',
-                'precipitation_sum',
-              ],
+              daily: [...daily],
               forecast_days: 7,
               timezone: 'auto',
             },
@@ -166,12 +181,15 @@ export function usePrefetchWeather() {
       startDate: string,
       endDate: string,
     ) => {
+      const daily = ['temperature_2m_mean', 'precipitation_sum'] as const
+
       queryClient.prefetchQuery({
         queryKey: weatherKeys.historical(
           latitude,
           longitude,
           startDate,
           endDate,
+          { daily, timezone: 'auto' },
         ),
         queryFn: () =>
           getHistoricalWeather({
@@ -180,7 +198,7 @@ export function usePrefetchWeather() {
               longitude,
               start_date: startDate,
               end_date: endDate,
-              daily: ['temperature_2m_mean', 'precipitation_sum'],
+              daily: [...daily],
               timezone: 'auto',
             },
           }),
