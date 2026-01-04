@@ -8,6 +8,8 @@
 import {
   endOfYear,
   format,
+  isValid,
+  parseISO,
   startOfYear,
   subDays,
   subMonths,
@@ -19,6 +21,7 @@ import type { DateRange } from 'react-day-picker'
 
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
+import { Input } from '@/components/ui/input'
 import {
   Popover,
   PopoverContent,
@@ -114,6 +117,9 @@ export function DateRangePicker({
   maxDate = subDays(new Date(), 5),
 }: DateRangePickerProps) {
   const [open, setOpen] = useState(false)
+  const [draftStart, setDraftStart] = useState<string>(value?.start ?? '')
+  const [draftEnd, setDraftEnd] = useState<string>(value?.end ?? '')
+  const [error, setError] = useState<string | null>(null)
 
   // 📅 Parse current value
   const dateRange: DateRange = {
@@ -121,10 +127,19 @@ export function DateRangePicker({
     to: value?.end ? new Date(value.end) : undefined,
   }
 
+  const syncDraftFromValue = useCallback(() => {
+    setDraftStart(value?.start ?? '')
+    setDraftEnd(value?.end ?? '')
+    setError(null)
+  }, [value?.start, value?.end])
+
   // 🔄 Handle date selection
   const handleSelect = useCallback(
     (range: DateRange | undefined) => {
       if (range?.from && range?.to) {
+        setDraftStart(format(range.from, 'yyyy-MM-dd'))
+        setDraftEnd(format(range.to, 'yyyy-MM-dd'))
+        setError(null)
         onChange?.({
           start: format(range.from, 'yyyy-MM-dd'),
           end: format(range.to, 'yyyy-MM-dd'),
@@ -134,13 +149,54 @@ export function DateRangePicker({
     [onChange],
   )
 
+  // ✅ Apply typed dates (inspired by johnpolacek/date-range-picker-for-shadcn) ✍️
+  const applyDraft = useCallback(() => {
+    const start = draftStart.trim()
+    const end = draftEnd.trim()
+
+    const startDate = parseISO(start)
+    const endDate = parseISO(end)
+
+    if (!start || !end) {
+      setError('Enter both start and end dates (YYYY-MM-DD).')
+      return
+    }
+    if (!isValid(startDate) || !isValid(endDate)) {
+      setError('Invalid date format. Use YYYY-MM-DD.')
+      return
+    }
+    if (startDate > endDate) {
+      setError('Start date must be before end date.')
+      return
+    }
+    if (startDate < minDate || endDate > maxDate) {
+      setError(
+        `Range must be between ${format(minDate, 'yyyy-MM-dd')} and ${format(
+          maxDate,
+          'yyyy-MM-dd',
+        )}.`,
+      )
+      return
+    }
+
+    setError(null)
+    onChange?.({ start, end })
+    setOpen(false)
+  }, [draftStart, draftEnd, minDate, maxDate, onChange])
+
   // 📅 Handle preset selection
   const handlePreset = useCallback(
     (preset: (typeof presets)[number]) => {
       const range = preset.getValue()
+      const start = format(range.from, 'yyyy-MM-dd')
+      const end = format(range.to, 'yyyy-MM-dd')
+
+      setDraftStart(start)
+      setDraftEnd(end)
+      setError(null)
       onChange?.({
-        start: format(range.from, 'yyyy-MM-dd'),
-        end: format(range.to, 'yyyy-MM-dd'),
+        start,
+        end,
       })
       setOpen(false)
     },
@@ -155,22 +211,31 @@ export function DateRangePicker({
     : 'Select date range'
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) syncDraftFromValue()
+      }}
+    >
       <PopoverTrigger
-        render={
+        // Base UI Trigger expects a render callback so it can wire events/ref correctly 🧩
+        render={(triggerProps) => (
           <Button
+            {...triggerProps}
             variant="outline"
             size={size}
             className={cn(
               'justify-start text-left font-normal',
               !dateRange.from && 'text-muted-foreground',
               className,
+              triggerProps.className,
             )}
           >
             <CalendarIcon className="mr-2 h-4 w-4" />
             {displayText}
           </Button>
-        }
+        )}
       />
       <PopoverContent className="w-auto p-0" align="start">
         <div className="flex">
@@ -194,6 +259,33 @@ export function DateRangePicker({
 
           {/* 📅 Calendar */}
           <div className="p-3">
+            <div className="flex flex-wrap items-end gap-2 mb-3">
+              <div className="space-y-1">
+                <div className="text-[11px] text-muted-foreground">Start</div>
+                <Input
+                  value={draftStart}
+                  onChange={(e) => setDraftStart(e.target.value)}
+                  placeholder="YYYY-MM-DD"
+                  className="h-8 w-[140px]"
+                />
+              </div>
+              <div className="space-y-1">
+                <div className="text-[11px] text-muted-foreground">End</div>
+                <Input
+                  value={draftEnd}
+                  onChange={(e) => setDraftEnd(e.target.value)}
+                  placeholder="YYYY-MM-DD"
+                  className="h-8 w-[140px]"
+                />
+              </div>
+              <Button size="sm" className="h-8" onClick={applyDraft}>
+                Apply
+              </Button>
+            </div>
+
+            {error && (
+              <div className="mb-2 text-xs text-destructive">{error}</div>
+            )}
             <Calendar
               mode="range"
               selected={dateRange}

@@ -67,14 +67,59 @@ export const weatherKeys = {
     lon: number,
     startDate?: string,
     endDate?: string,
+    opts?: {
+      daily?: readonly string[]
+      hourly?: readonly string[]
+      timezone?: string
+      models?: unknown
+    },
   ) =>
     [
       ...weatherKeys.all,
       'historical',
-      { lat, lon, startDate, endDate },
+      {
+        lat,
+        lon,
+        startDate,
+        endDate,
+        daily: opts?.daily,
+        hourly: opts?.hourly,
+        timezone: opts?.timezone,
+        models: opts?.models,
+      },
     ] as const,
-  forecast: (lat: number, lon: number) =>
-    [...weatherKeys.all, 'forecast', { lat, lon }] as const,
+  forecast: (
+    lat: number,
+    lon: number,
+    opts?: {
+      forecastDays?: number
+      startDate?: string
+      endDate?: string
+      daily?: readonly string[]
+      hourly?: readonly string[]
+      current?: readonly string[]
+      timezone?: string
+      pastDays?: number
+      models?: unknown
+    },
+  ) =>
+    [
+      ...weatherKeys.all,
+      'forecast',
+      {
+        lat,
+        lon,
+        forecastDays: opts?.forecastDays,
+        startDate: opts?.startDate,
+        endDate: opts?.endDate,
+        daily: opts?.daily,
+        hourly: opts?.hourly,
+        current: opts?.current,
+        timezone: opts?.timezone,
+        pastDays: opts?.pastDays,
+        models: opts?.models,
+      },
+    ] as const,
   current: (lat: number, lon: number) =>
     [...weatherKeys.all, 'current', { lat, lon }] as const,
 }

@@ -12,11 +12,36 @@ import {
   Download,
   LineChart,
 } from 'lucide-react'
-
+import { VariableSelector } from '@/components/search/variable-selector'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { chartTypeConfig } from '@/lib/chart-config'
-import type { ChartType } from '@/lib/search-params'
+import type {
+  ChartType,
+  CompareAggregation,
+  CompareDataSource,
+  CompareStat,
+  WeatherVariable,
+} from '@/lib/search-params'
+import {
+  compareAggregations,
+  compareDataSources,
+  compareStats,
+} from '@/lib/search-params'
 import { cn } from '@/lib/utils'
 
 // 🎨 Chart type icons
@@ -170,5 +195,222 @@ export function ChartTypeLabel({
       <Icon className="h-4 w-4" />
       {config.label}
     </span>
+  )
+}
+
+/**
+ * 🧭 Compare Workspace Controls
+ * Higher-level controls for the `/compare` analysis workspace.
+ *
+ * This lives alongside `ChartControls` to keep the UI patterns consistent
+ * while avoiding breaking changes to existing chart consumers.
+ */
+export function CompareWorkspaceControls({
+  vars,
+  onVarsChange,
+  yAxes,
+  onAxisChange,
+  source,
+  onSourceChange,
+  agg,
+  onAggChange,
+  stats,
+  onStatsChange,
+  smoothDays,
+  onSmoothDaysChange,
+  onExport,
+  className,
+}: {
+  vars: WeatherVariable[]
+  onVarsChange: (vars: WeatherVariable[]) => void
+  yAxes: Partial<Record<WeatherVariable, 'left' | 'right'>>
+  onAxisChange: (
+    yAxes: Partial<Record<WeatherVariable, 'left' | 'right'>>,
+  ) => void
+  source: CompareDataSource
+  onSourceChange: (source: CompareDataSource) => void
+  agg: CompareAggregation
+  onAggChange: (agg: CompareAggregation) => void
+  stats: CompareStat[]
+  onStatsChange: (stats: CompareStat[]) => void
+  smoothDays: number
+  onSmoothDaysChange: (days: number) => void
+  onExport?: (format: 'png' | 'csv') => void
+  className?: string
+}) {
+  const toggleAxis = (variable: WeatherVariable, side: 'left' | 'right') => {
+    onAxisChange({ ...yAxes, [variable]: side })
+  }
+
+  const toggleStat = (stat: CompareStat) => {
+    const next = stats.includes(stat)
+      ? stats.filter((s) => s !== stat)
+      : [...stats, stat]
+    onStatsChange(next)
+  }
+
+  return (
+    <div className={cn('flex flex-wrap items-center gap-2', className)}>
+      {/* 📊 Variables */}
+      <VariableSelector
+        value={vars}
+        onChange={onVarsChange}
+        maxSelections={6}
+        className="min-w-[180px]"
+      />
+
+      {/* 🧪 Source */}
+      <Select
+        value={source}
+        onValueChange={(v) => onSourceChange(v as CompareDataSource)}
+      >
+        <SelectTrigger className="w-[140px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {compareDataSources.map((s) => (
+            <SelectItem key={s} value={s}>
+              {s}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {/* 📦 Aggregation */}
+      <Select
+        value={agg}
+        onValueChange={(v) => onAggChange(v as CompareAggregation)}
+      >
+        <SelectTrigger className="w-[140px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {compareAggregations.map((a) => (
+            <SelectItem key={a} value={a}>
+              {a}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {/* 🧭 Axes */}
+      <Popover>
+        {/* Base UI Trigger expects a render callback so it can wire events/ref correctly 🧩 */}
+        <PopoverTrigger
+          render={(triggerProps) => (
+            <Button
+              {...triggerProps}
+              variant="outline"
+              size="sm"
+              className={cn(triggerProps.className)}
+            >
+              Axes
+            </Button>
+          )}
+        />
+        <PopoverContent className="w-[320px]" align="start">
+          <div className="text-sm font-medium mb-2">Y-axis assignment</div>
+          <div className="space-y-2">
+            {vars.length === 0 ? (
+              <div className="text-sm text-muted-foreground">
+                Pick variables first.
+              </div>
+            ) : (
+              vars.map((v) => (
+                <div
+                  key={v}
+                  className="flex items-center justify-between gap-3"
+                >
+                  <div className="text-sm truncate">{v}</div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={
+                        (yAxes[v] ?? 'left') === 'left' ? 'secondary' : 'ghost'
+                      }
+                      onClick={() => toggleAxis(v, 'left')}
+                    >
+                      L
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={yAxes[v] === 'right' ? 'secondary' : 'ghost'}
+                      onClick={() => toggleAxis(v, 'right')}
+                    >
+                      R
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      {/* 📊 Overlays */}
+      <Popover>
+        {/* Base UI Trigger expects a render callback so it can wire events/ref correctly 🧩 */}
+        <PopoverTrigger
+          render={(triggerProps) => (
+            <Button
+              {...triggerProps}
+              variant="outline"
+              size="sm"
+              className={cn(triggerProps.className)}
+            >
+              Overlays
+            </Button>
+          )}
+        />
+        <PopoverContent className="w-[320px]" align="start">
+          <div className="text-sm font-medium mb-2">Stats overlays</div>
+          <div className="grid grid-cols-2 gap-2">
+            {compareStats.map((s) => (
+              <label key={s} className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={stats.includes(s)}
+                  onCheckedChange={() => toggleStat(s)}
+                />
+                {s}
+              </label>
+            ))}
+          </div>
+          <Separator className="my-3" />
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm">
+              Rolling window{' '}
+              <span className="text-muted-foreground">(days)</span>
+            </div>
+            <Input
+              className="w-[90px]"
+              type="number"
+              min={1}
+              max={60}
+              value={smoothDays}
+              // UX: select-all so typing replaces `7` instead of appending (`714`) ✨
+              onFocus={(e) => e.currentTarget.select()}
+              onChange={(e) => onSmoothDaysChange(Number(e.target.value))}
+            />
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      {/* 📥 Export */}
+      {onExport && (
+        <>
+          <Separator orientation="vertical" className="h-6" />
+          <Button variant="ghost" size="sm" onClick={() => onExport('png')}>
+            <Download className="mr-1 h-4 w-4" />
+            PNG
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => onExport('csv')}>
+            <Download className="mr-1 h-4 w-4" />
+            CSV
+          </Button>
+        </>
+      )}
+    </div>
   )
 }

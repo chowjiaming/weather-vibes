@@ -40,7 +40,7 @@ import {
   useHistoricalWeather,
   useMarineWeather,
 } from '@/hooks/queries'
-import { getDefaultLocation } from '@/lib/default-locations'
+import { useDefaultLocation } from '@/hooks/use-default-location'
 import {
   calculateStats,
   formatDate,
@@ -130,7 +130,7 @@ function ExplorePage() {
   const [showPanels, setShowPanels] = useState(true)
 
   // 🌍 Get regional default based on user's timezone
-  const defaultLocation = useMemo(() => getDefaultLocation(), [])
+  const defaultLocation = useDefaultLocation()
 
   // 📍 Use URL params if provided, otherwise use regional default
   const hasUrlParams = lat !== undefined && lon !== undefined

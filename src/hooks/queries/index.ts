@@ -10,7 +10,8 @@ export {
   type UseAirQualityOptions,
   useAirQuality,
 } from './use-air-quality-query'
-
+// 🔁 Compare workspace
+export { useCompareWorkspaceData } from './use-compare-workspace-query'
 // 🌍 Geocoding
 export {
   createLocationSlug,
@@ -19,7 +20,6 @@ export {
   useGeocodingSearch,
   usePrefetchGeocoding,
 } from './use-geocoding-query'
-
 // 🌊 Marine & Flood
 export {
   extractFloodData,
@@ -31,7 +31,6 @@ export {
   useFloodData,
   useMarineWeather,
 } from './use-marine-query'
-
 // 🌡️ Weather
 export {
   type UseForecastOptions,

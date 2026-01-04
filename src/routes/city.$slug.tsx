@@ -30,7 +30,6 @@ import { DateRangePicker, VariableSelector } from '@/components/search'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { calculateStats, getDefaultDateRange } from '@/lib/chart-config'
 import type { ChartType, WeatherVariable } from '@/lib/search-params'
@@ -64,17 +63,6 @@ type CitySearch = z.infer<typeof citySearchSchema>
 
 export const Route = createFileRoute('/city/$slug')({
   validateSearch: citySearchSchema,
-
-  head: () => ({
-    meta: [
-      { title: 'City Weather History | Weather Vibes' },
-      {
-        name: 'description',
-        content:
-          'Explore historical weather patterns. View temperature trends, precipitation data, and climate analysis from 1940 to present.',
-      },
-    ],
-  }),
 
   loader: async ({ params, location }) => {
     const cityName = parseCitySlug(params.slug)
@@ -148,6 +136,7 @@ export const Route = createFileRoute('/city/$slug')({
     })
 
     return {
+      slug: params.slug,
       data: response,
       location: locationInfo,
       coordinates: { lat, lon },
@@ -155,26 +144,64 @@ export const Route = createFileRoute('/city/$slug')({
     }
   },
 
-  pendingComponent: CityPending,
+  // 🔄 Loader is declared above so `head` can be properly typed from `loaderData` 💡
+  head: ({ loaderData }) => {
+    const slug = loaderData?.slug ?? ''
+    const name =
+      loaderData?.location?.name ?? (slug ? parseCitySlug(slug) : 'City')
+    const country = loaderData?.location?.country
+    const place = country ? `${name}, ${country}` : name
+
+    const start = loaderData?.dateRange?.start
+    const end = loaderData?.dateRange?.end
+    const rangeText = start && end ? ` (${start} to ${end})` : ''
+
+    const canonical = slug
+      ? `https://weathervibes.xyz/city/${slug}`
+      : `https://weathervibes.xyz/city`
+
+    const description = `Explore historical weather patterns for ${place}${rangeText}. View temperature trends, precipitation, and climate analysis from 1940 to present.`
+
+    return {
+      meta: [
+        { title: `${place} Weather History | Weather Vibes` },
+        { name: 'description', content: description },
+
+        // 🔗 Canonical sharing hints
+        { property: 'og:title', content: `${place} Weather History` },
+        { property: 'og:description', content: description },
+        { property: 'og:url', content: canonical },
+        { name: 'twitter:title', content: `${place} Weather History` },
+        { name: 'twitter:description', content: description },
+      ],
+      links: [{ rel: 'canonical', href: canonical }],
+      scripts: [
+        {
+          type: 'application/ld+json',
+          children: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'Place',
+            name: place,
+            geo: loaderData?.coordinates
+              ? {
+                  '@type': 'GeoCoordinates',
+                  latitude: loaderData.coordinates.lat,
+                  longitude: loaderData.coordinates.lon,
+                }
+              : undefined,
+            containedInPlace: country
+              ? { '@type': 'Country', name: country }
+              : undefined,
+            url: canonical,
+          }),
+        },
+      ],
+    }
+  },
+
   component: CityComponent,
   notFoundComponent: CityNotFound,
 })
-
-function CityPending() {
-  return (
-    <Container className="py-8">
-      <div className="space-y-6">
-        <Skeleton className="h-8 w-64" />
-        <div className="grid gap-4 sm:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={`skeleton-${i}`} className="h-24" />
-          ))}
-        </div>
-        <Skeleton className="h-[400px]" />
-      </div>
-    </Container>
-  )
-}
 
 function CityNotFound() {
   return (

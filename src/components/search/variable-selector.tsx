@@ -120,18 +120,20 @@ export function VariableSelector({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        render={
+        // Base UI Trigger expects a render callback so it can wire events/ref correctly 🧩
+        render={(triggerProps) => (
           <Button
+            {...triggerProps}
             variant="outline"
             size={size}
             role="combobox"
             aria-expanded={open}
-            className={cn('justify-between', className)}
+            className={cn('justify-between', className, triggerProps.className)}
           >
             <span className="truncate">{displayText}</span>
             <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
-        }
+        )}
       />
       <PopoverContent className="w-[320px] p-0" align="start">
         {/* 📊 Selected badges */}
